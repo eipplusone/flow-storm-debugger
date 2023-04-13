@@ -7,23 +7,40 @@ A tracing debugger for Clojure and ClojureScript
 
 The idea behind FlowStorm is pretty simple :
 
-  - Instrument any Clojure form 
+  - Instrument Clojure code
   - Run it
-  - Retain and index every immutable value pointer (snapshot mutable ones), function calls, etc
+  - Record everything that happens during execution
   - Provide a GUI to explore your values and execution flow
 
-# Clojure has the repl, does it need a debugger?
+There are two ways of using it for Clojure :
+	
+	- Vanilla FlowStorm : Just add FlowStorm to your dev classpath and instrument by re-evaluating forms
+	- With ClojureStorm (recommended) : Swap your dev Clojure compiler by ClojureStorm and get everything instrumented automatically
+	
+ClojureStorm is a fork of the oficial Clojure compiler that adds automatic instrumentation so you don't need to think about it (you can still disable it when you don't need it).
 
-I gave a talk recently for the London Clojurians, the first slide goes about my answer to this :
-https://www.youtube.com/watch?v=A3AzlqNwUXc&t=934s
-
+You use it by swapping the oficial Clojure compiler by ClojureStorm at dev time, using dev aliases or profiles.
+	
 # Artifacts
 
-Last stable releases :
+The complete debugger :
+
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.jpmonettas/flow-storm-dbg.svg)](https://clojars.org/com.github.jpmonettas/flow-storm-dbg)
+
+ 
+A slimer version with no GUI, you may want to use it for Clojure or ClojureScript remote debugging :
+
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.jpmonettas/flow-storm-inst.svg)](https://clojars.org/com.github.jpmonettas/flow-storm-inst)
+
+ClojureStorm : 
+
+[![Clojars Project](https://img.shields.io/clojars/v/com.github.jpmonettas/clojure.svg)](https://clojars.org/com.github.jpmonettas/clojure)
+
+Latest stable releases :
 
 	[com.github.jpmonettas/flow-storm-dbg "3.3.325"]
 	[com.github.jpmonettas/flow-storm-inst "3.3.325"]
-
+	
 # Prerequisites
 
   - jdk11+
@@ -57,7 +74,12 @@ Flow storm debugger is packed with a ton of features, here is a non-comprehensiv
 - Conditional tracing
 - Customizable mutable value snapshoting (via `flow-storm.runtime.values/snapshot-value` multi-method)
 
-## Some demo videos
+# Clojure has the repl, does it need a debugger?
+
+I gave a talk recently for the London Clojurians, the first slide goes about my answer to this :
+https://www.youtube.com/watch?v=A3AzlqNwUXc&t=934s
+
+## Some more demo videos
 
 - [Show me your REPL episode](https://www.youtube.com/watch?v=2nH59edD5Uo)
 - [Debugging Clojure with FlowStorm](https://www.youtube.com/watch?v=PbGVTVs1yiU)
