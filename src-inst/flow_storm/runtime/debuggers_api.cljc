@@ -73,14 +73,16 @@
     true         (update :expr-executions (fn [ee]
                                             (mapv #(update % :result reference-value!) ee)))))
 
+(defn reference-timeline-entry! [entry]
+  (case (:type entry)
+    :fn-call   (update entry :fn-args reference-value!)
+    :fn-return (update entry :result reference-value!)
+    :bind      (update entry :value reference-value!)
+    :expr      (update entry :result reference-value!)))
+
 (defn timeline-entry [flow-id thread-id idx drift]
-  (let [entry (index-api/timeline-entry flow-id thread-id idx drift)
-        ref-entry (case (:type entry)
-                    :fn-call   (update entry :fn-args reference-value!)
-                    :fn-return (update entry :result reference-value!)
-                    :bind      (update entry :value reference-value!)
-                    :expr      (update entry :result reference-value!))]
-    ref-entry)) 
+  (some-> (index-api/timeline-entry flow-id thread-id idx drift)
+          reference-timeline-entry!)) 
 
 (defn frame-data [flow-id thread-id idx opts]
   (let [frame-data (index-api/frame-data flow-id thread-id idx opts)]
@@ -115,6 +117,10 @@
   (let [fn-frames (index-api/find-fn-frames flow-id thread-id fn-ns fn-name form-id)
         frames (into [] (map reference-frame-data!) fn-frames)]
     frames))
+
+(defn find-first-fn-call [fq-fn-call-symb]
+  (some-> (index-api/find-first-fn-call fq-fn-call-symb)
+          reference-timeline-entry!))
 
 ;; NOTE: this is duplicated for Clojure and ClojureScript so I could get rid of core.async in the runtime part
 ;;       so it can be AOT compiled without too many issues

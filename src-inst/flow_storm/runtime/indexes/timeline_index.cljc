@@ -223,6 +223,16 @@
                                                       {}))))
               sub-timeline))))
 
+  (timeline-find-entry [this from-idx pred]
+    (locking this
+      (let [from (or from-idx 0)
+            to (dec (ml-count timeline))
+            sub-timeline (ml-sub-list timeline from to)]
+        (some (fn [tl-entry]
+                (when (pred tl-entry)
+                  (index-protos/as-immutable tl-entry)))
+              sub-timeline))))
+
   (timeline-raw-entries [this from-idx to-idx]
     (locking this
       (let [from (or from-idx 0)
