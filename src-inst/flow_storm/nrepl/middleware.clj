@@ -4,7 +4,9 @@
             [nrepl.misc :refer [response-for] :as misc]
             [nrepl.middleware :as middleware :refer [set-descriptor!]]
             [nrepl.transport :as t]
-            [nrepl.bencode])
+            [nrepl.bencode]
+            [clojure.java.io :as io]
+            [clojure.string :as str])
   (:import [nrepl.transport Transport]
            [flow_storm.types ValueRef]))
 
@@ -23,8 +25,17 @@
                                   (value-ref->int :fn-args))}))
 
 (defn get-form [{:keys [form-id] :as msg}]
-  (response-for msg {:status :done
-                     :form (debuggers-api/get-form nil nil form-id)}))
+  (let [form (debuggers-api/get-form nil nil form-id)
+        form (update form :form/file (fn [file-name]
+                                       (when-let [file (if (str/starts-with? file-name "/")
+                                                         (io/file file-name)
+                                                         (io/resource file-name))]
+                                         (.getPath file))))]
+    (when-not (:form/file form)
+      (println "Can't get the file path for form %s" form))
+
+    (response-for msg {:status :done
+                       :form form})))
 
 (defn timeline-entry [{:keys [flow-id thread-id idx drift] :as msg}]
   (response-for msg {:status :done

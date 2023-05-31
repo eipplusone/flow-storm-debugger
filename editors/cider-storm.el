@@ -96,6 +96,13 @@
 		(cider--debug-remove-overlays)
 		(cider--debug-display-result-overlay val-str)))))
 
+(defun cider-storm-show-help ()
+  (let* ((help-text "INSERT HELP HERE")
+		 (help-buf (cider-popup-buffer "*cider-storm-help*" 'select)))
+	(with-current-buffer val-buffer
+	  (let ((inhibit-read-only t))			
+		(insert help-text)))))
+
 (defun cider-storm-pprint-current-entry ()
   (let* ((entry-type (cider-storm-entry-type cider-storm-current-entry)))
 	(when (or (eq entry-type 'fn-return)
@@ -115,18 +122,19 @@
 			(insert val-str)))))))
 
 (defun cider-storm-jump-to-code (flow-id thread-id next-entry)
-  (let* ((curr-frame (if cider-storm-current-frame
-						 cider-storm-current-frame
-					   (let* ((first-frame (cider-storm-frame-data flow-id thread-id 0))
-							  (first-entry (cider-storm-timeline-entry flow-id thread-id 0 "at")))
-						 (setq cider-storm-current-frame first-frame)
-						 (setq cider-storm-current-entry first-entry)
-						 first-frame)))
-		 (curr-idx (nrepl-dict-get cider-storm-current-entry "idx"))
-		 (next-idx (nrepl-dict-get next-entry "idx"))
-		 (curr-fn-call-idx (nrepl-dict-get cider-storm-current-entry "fn-call-idx"))
+  (let* ((curr-fn-call-idx (nrepl-dict-get cider-storm-current-frame "fn-call-idx"))
 		 (next-fn-call-idx (nrepl-dict-get next-entry "fn-call-idx"))
 		 (changing-frame? (not (= curr-fn-call-idx next-fn-call-idx)))
+		 (curr-frame (if changing-frame?
+						 (let* ((first-frame (cider-storm-frame-data flow-id thread-id 0))
+								(first-entry (cider-storm-timeline-entry flow-id thread-id 0 "at")))
+						   (setq cider-storm-current-frame first-frame)
+						   (setq cider-storm-current-entry first-entry)
+						   first-frame)
+					   cider-storm-current-frame))
+		 (curr-idx (nrepl-dict-get cider-storm-current-entry "idx"))
+		 (next-idx (nrepl-dict-get next-entry "idx"))		 
+         
 		 (next-frame (if changing-frame?
 						 (cider-storm-frame-data flow-id thread-id next-fn-call-idx)
 					   cider-storm-current-frame))
@@ -194,4 +202,5 @@
   '(("q" . (lambda () (interactive) (cider--debug-remove-overlays) (cider-storm-debugging-mode -1)))
 	("n" . (lambda () (interactive) (cider-storm-step "next")))
 	("p" . (lambda () (interactive) (cider-storm-step "prev")))
+	("h" . (lambda () (interactive) (cider-storm-show-help)))
 	("." . (lambda () (interactive) (cider-storm-pprint-current-entry)))))
