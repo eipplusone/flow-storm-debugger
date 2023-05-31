@@ -6,7 +6,8 @@
             [nrepl.transport :as t]
             [nrepl.bencode]
             [clojure.java.io :as io]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [cider.nrepl.middleware.util.cljs :as cljs-utils])
   (:import [nrepl.transport Transport]
            [flow_storm.types ValueRef]))
 
@@ -75,44 +76,46 @@
       "flow-storm-pprint"             (t/send transport (pprint-val-ref msg))
       (h msg))))
 
-(set-descriptor! #'wrap-flow-storm
-                 {:requires #{}
-                  :expects #{}
-                  :handles {"flow-storm-find-first-fn-call"
-                            {:doc "Find the first FnCall for a symbol"
-                             :requires {"fq-fn-symb" "The Fully qualified function symbol"}
-                             :optional {}
-                             :returns {"fn-call" "A map with ..."}}
+(set-descriptor!
+ #'wrap-flow-storm
+ (cljs-utils/expects-piggieback
+  {:requires #{}
+   :expects #{}
+   :handles {"flow-storm-find-first-fn-call"
+             {:doc "Find the first FnCall for a symbol"
+              :requires {"fq-fn-symb" "The Fully qualified function symbol"}
+              :optional {}
+              :returns {"fn-call" "A map with ..."}}
 
-                            "flow-storm-get-form"
-                            {:doc "Return a registered form"
-                             :requires {"form-id" "The id of the form"}
-                             :optional {}
-                             :returns {"form" "A map with ..."}}
+             "flow-storm-get-form"
+             {:doc "Return a registered form"
+              :requires {"form-id" "The id of the form"}
+              :optional {}
+              :returns {"form" "A map with ..."}}
 
-                            "flow-storm-timeline-entry"
-                            {:doc "Return a timeline entry"
-                             :requires {"flow-id" "The flow-id for the entry"
-                                        "thread-id" "The thread-id for the entry"
-                                        "idx" "The current timeline idx"
-                                        "drift" "The drift, one of next-out next-over prev-over next prev at"}
-                             :optional {}
-                             :returns {"entry" "A map with ..."}}
+             "flow-storm-timeline-entry"
+             {:doc "Return a timeline entry"
+              :requires {"flow-id" "The flow-id for the entry"
+                         "thread-id" "The thread-id for the entry"
+                         "idx" "The current timeline idx"
+                         "drift" "The drift, one of next-out next-over prev-over next prev at"}
+              :optional {}
+              :returns {"entry" "A map with ..."}}
 
-                            "flow-storm-frame-data"
-                            {:doc "Return a frame for a fn-call index"
-                             :requires {"flow-id" "The flow-id for the entry"
-                                        "thread-id" "The thread-id for the entry"
-                                        "fn-call-idx" "The fn-call timeline idx"}
-                             :optional {}
-                             :returns {"frame" "A map with ..."}}
+             "flow-storm-frame-data"
+             {:doc "Return a frame for a fn-call index"
+              :requires {"flow-id" "The flow-id for the entry"
+                         "thread-id" "The thread-id for the entry"
+                         "fn-call-idx" "The fn-call timeline idx"}
+              :optional {}
+              :returns {"frame" "A map with ..."}}
 
-                            "flow-storm-pprint"
-                            {:doc "Return a pretty printing for a value reference id"
-                             :requires {"val-ref" "The value reference id"
-                                        "print-length" "A *print-length* val for pprint"
-                                        "print-level" "A *print-level* val for pprint"
-                                        "print-meta" "A *print-meta* val for pprint"
-                                        "pprint" "When true will pretty print, otherwise just print"}
-                             :optional {}
-                             :returns {"pprint" "A map with :val-str and :val-type"}}}})
+             "flow-storm-pprint"
+             {:doc "Return a pretty printing for a value reference id"
+              :requires {"val-ref" "The value reference id"
+                         "print-length" "A *print-length* val for pprint"
+                         "print-level" "A *print-level* val for pprint"
+                         "print-meta" "A *print-meta* val for pprint"
+                         "pprint" "When true will pretty print, otherwise just print"}
+              :optional {}
+              :returns {"pprint" "A map with :val-str and :val-type"}}}}))

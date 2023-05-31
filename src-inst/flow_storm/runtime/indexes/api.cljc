@@ -19,19 +19,12 @@
 (defn get-last-exception-location []
   @last-exception-location)
 
-(defn register-form [{:keys [flow-id form-id ns form def-kind mm-dispatch-val]}]
-  (let [form-data (cond-> {:form/id form-id
-                           :form/flow-id flow-id
-                           :form/ns ns
-                           :form/form form
-                           :form/def-kind def-kind}
-                    (= def-kind :defmethod)
-                    (assoc :multimethod/dispatch-val mm-dispatch-val))]
-    (if forms-registry
-      
-      (index-protos/register-form forms-registry form-id form-data)
+(defn register-form [form-data]
+  (if forms-registry
+    
+    (index-protos/register-form forms-registry (:form/id form-data) form-data)
 
-      (utils/log "Warning, trying to register a form before FlowStorm startup. If you have #trace tags on your code you will have to evaluate them again after starting the debugger."))))
+    (utils/log "Warning, trying to register a form before FlowStorm startup. If you have #trace tags on your code you will have to evaluate them again after starting the debugger.")))
 
 (defn handle-exception [thread ex]
   
