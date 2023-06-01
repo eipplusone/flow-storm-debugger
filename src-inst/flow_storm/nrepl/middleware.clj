@@ -3,6 +3,8 @@
             [flow-storm.types :refer [make-value-ref]]
             [nrepl.misc :refer [response-for] :as misc]
             [nrepl.middleware :as middleware :refer [set-descriptor!]]
+            [cider.nrepl.middleware.util.error-handling :refer [base-error-response]]
+            [nrepl.middleware.caught :as caught]
             [nrepl.transport :as t]
             [nrepl.bencode]
             [clojure.java.io :as io]
@@ -19,6 +21,10 @@
   (if (contains? m k)
     (update m k :vid)
     m))
+
+(defn find-first-fn-call-code [{:keys [fq-fn-symb] :as msg}]
+  `{:status :done
+    :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))})
 
 (defn find-first-fn-call [{:keys [fq-fn-symb] :as msg}]
   (response-for msg {:status :done
@@ -64,17 +70,71 @@
                                                         :print-meta?  (Boolean/parseBoolean print-meta)
                                                         :pprint?      (Boolean/parseBoolean pprint)})}))
 
+(defn cljs-transport
+  [{:keys [^Transport transport] :as msg} result-proc-fn]
+  (reify Transport
+    (recv [_this]
+      (.recv transport))
+
+    (recv [_this timeout]
+      (.recv transport timeout))
+
+    (send [this response]
+      (cond (contains? response :value)
+            (let [rsp-val (read-string (:value response))
+                  processed-val (result-proc-fn rsp-val)
+                  rsp (response-for msg processed-val)]
+              (.send transport rsp))
+
+            ;; If the eval errored, propagate the exception as error in the
+            ;; inspector middleware, so that the client CIDER code properly
+            ;; renders it instead of silently ignoring it.
+            (and (contains? (:status response) :eval-error)
+                 (contains? response ::caught/throwable))
+            (let [e (::caught/throwable response)
+                  resp (base-error-response msg e :inspect-eval-error :done)]
+              (.send transport resp))
+
+            :else (.send transport response))
+      this)))
+
+(defn process-msg [next-handler {:keys [^Transport transport] :as msg} msg-code-gen-fn result-proc-fn cljs?]
+  (let [rt-code (msg-code-gen-fn msg)]
+
+    (if cljs?
+      ;; ClojureScript handling
+      (let [tr (cljs-transport msg result-proc-fn)
+            cljs-code (pr-str rt-code)]
+        (next-handler (assoc msg
+                             :transport tr
+                             :op "eval"
+                             :code cljs-code
+                             :ns "cljs.user")))
+
+      ;; Clojure handling
+      (let [rsp (response-for msg (result-proc-fn (eval rt-code)))]
+        (t/send transport rsp)))))
+
 (defn wrap-flow-storm
   "Middleware that provides flow-storm functionality "
-  [h]
-  (fn [{:keys [op ^Transport transport] :as msg}]
-    (case op
-      "flow-storm-find-first-fn-call" (t/send transport (find-first-fn-call msg))
-      "flow-storm-get-form"           (t/send transport (get-form msg))
-      "flow-storm-timeline-entry"     (t/send transport (timeline-entry msg))
-      "flow-storm-frame-data"         (t/send transport (frame-data msg))
-      "flow-storm-pprint"             (t/send transport (pprint-val-ref msg))
-      (h msg))))
+  [next-handler]
+  (fn [{:keys [op] :as msg}]
+    (let [piggieback? (or cljs-utils/cider-piggieback? cljs-utils/nrepl-piggieback?)]
+      (case op
+        "flow-storm-find-first-fn-call" (process-msg next-handler
+                                                     msg
+                                                     find-first-fn-call-code
+                                                     (fn [result]
+                                                       (update result :fn-call value-ref->int :fn-args))
+                                                     piggieback?)
+        (next-handler msg)))
+    #_(case op
+        "flow-storm-find-first-fn-call" (t/send transport (find-first-fn-call msg))
+        "flow-storm-get-form"           (t/send transport (get-form msg))
+        "flow-storm-timeline-entry"     (t/send transport (timeline-entry msg))
+        "flow-storm-frame-data"         (t/send transport (frame-data msg))
+        "flow-storm-pprint"             (t/send transport (pprint-val-ref msg))
+        (h msg))))
 
 (set-descriptor!
  #'wrap-flow-storm
