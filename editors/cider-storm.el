@@ -2,10 +2,13 @@
 
 ;; (add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
 
-(cider-storm-find-first-fn-call "dev-tester/boo")
+(nrepl-dict-get (cider-storm-find-first-fn-call "dev-tester/boo") "form-id")
 ;; (cider-var-info "dev-tester/boo")
-;; (cider-storm-get-form 1451539897)
+(cider-storm-get-form 440181832)
 ;; (cider-storm-timeline-entry nil 20 7 "next")
+
+(cider-nrepl-send-sync-request `("op" "xxx"))
+
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Debugger state ;;
@@ -125,7 +128,7 @@
 (defun cider-storm-jump-to-code (flow-id thread-id next-entry)
   (let* ((curr-fn-call-idx (nrepl-dict-get cider-storm-current-frame "fn-call-idx"))
 		 (next-fn-call-idx (nrepl-dict-get next-entry "fn-call-idx"))
-		 (changing-frame? (not (= curr-fn-call-idx next-fn-call-idx)))
+		 (changing-frame? (not (eq curr-fn-call-idx next-fn-call-idx)))
 		 (curr-frame (if changing-frame?
 						 (let* ((first-frame (cider-storm-frame-data flow-id thread-id 0))
 								(first-entry (cider-storm-timeline-entry flow-id thread-id 0 "at")))
@@ -142,7 +145,7 @@
 		 (curr-form-id (nrepl-dict-get cider-storm-current-frame "form-id"))
 		 (next-form-id (nrepl-dict-get next-frame "form-id"))
 		 (first-jump? (and (zerop curr-idx) (zerop next-idx)))
-		 (changing-form? (not (= curr-form-id next-form-id))))
+		 (changing-form? (not (eq curr-form-id next-form-id))))
 		
 	(when changing-frame?
 	  (setq cider-storm-current-frame next-frame))

@@ -68,9 +68,11 @@
     (send [this response]
       (dbg "@@@ CLJS got response" response)
       (cond (contains? response :value)
-            (let [_ (dbg "@@@ CLJS (:value response)" (:value response))
-                  rsp-val (read-string (:value response))
-                  _ (dbg "@@@@ after reading string")
+            (let [_ (dbg "@@@ CLJS (:value response) " (type (:value response)) " " (:value response))
+                  rsp-val (if (string? (:value response))
+                            (read-string (:value response))
+                            (:value response))
+                  _ (dbg "@@@@ after reading string" rsp-val)
                   processed-val (result-proc-fn rsp-val)
                   _ (dbg "@@@@ after processed-val" processed-val)
                   rsp (response-for msg processed-val)]
@@ -113,6 +115,11 @@
   (fn [{:keys [op] :as msg}]
     (let [piggieback? (or cljs-utils/cider-piggieback? cljs-utils/nrepl-piggieback?)]
       (case op
+        "xxx" (process-msg next-handler ;; @@@@@@@@@@
+                           msg
+                           (fn [_] `{:status :done :r (str (type 42))})
+                           identity
+                           piggieback?)
         "flow-storm-find-first-fn-call" (process-msg next-handler
                                                      msg
                                                      find-first-fn-call-code
@@ -153,46 +160,55 @@
                                          piggieback?)
         (next-handler msg)))))
 
+(def descr (cljs-utils/expects-piggieback
+            {:requires #{}
+             :expects #{}
+             :handles {
+                       "xxx" ;; @@@@@@@@@@
+                       {:doc "xxx"
+                        :requires {}
+                        :optional {}
+                        :returns {"r" ""}}
+
+                       "flow-storm-find-first-fn-call"
+                       {:doc "Find the first FnCall for a symbol"
+                        :requires {"fq-fn-symb" "The Fully qualified function symbol"}
+                        :optional {}
+                        :returns {"fn-call" "A map with ..."}}
+
+                       "flow-storm-get-form"
+                       {:doc "Return a registered form"
+                        :requires {"form-id" "The id of the form"}
+                        :optional {}
+                        :returns {"form" "A map with ..."}}
+
+                       "flow-storm-timeline-entry"
+                       {:doc "Return a timeline entry"
+                        :requires {"flow-id" "The flow-id for the entry"
+                                   "thread-id" "The thread-id for the entry"
+                                   "idx" "The current timeline idx"
+                                   "drift" "The drift, one of next-out next-over prev-over next prev at"}
+                        :optional {}
+                        :returns {"entry" "A map with ..."}}
+
+                       "flow-storm-frame-data"
+                       {:doc "Return a frame for a fn-call index"
+                        :requires {"flow-id" "The flow-id for the entry"
+                                   "thread-id" "The thread-id for the entry"
+                                   "fn-call-idx" "The fn-call timeline idx"}
+                        :optional {}
+                        :returns {"frame" "A map with ..."}}
+
+                       "flow-storm-pprint"
+                       {:doc "Return a pretty printing for a value reference id"
+                        :requires {"val-ref" "The value reference id"
+                                   "print-length" "A *print-length* val for pprint"
+                                   "print-level" "A *print-level* val for pprint"
+                                   "print-meta" "A *print-meta* val for pprint"
+                                   "pprint" "When true will pretty print, otherwise just print"}
+                        :optional {}
+                        :returns {"pprint" "A map with :val-str and :val-type"}}}}))
+
 (set-descriptor!
  #'wrap-flow-storm
- (cljs-utils/expects-piggieback
-  {:requires #{}
-   :expects #{}
-   :handles {"flow-storm-find-first-fn-call"
-             {:doc "Find the first FnCall for a symbol"
-              :requires {"fq-fn-symb" "The Fully qualified function symbol"}
-              :optional {}
-              :returns {"fn-call" "A map with ..."}}
-
-             "flow-storm-get-form"
-             {:doc "Return a registered form"
-              :requires {"form-id" "The id of the form"}
-              :optional {}
-              :returns {"form" "A map with ..."}}
-
-             "flow-storm-timeline-entry"
-             {:doc "Return a timeline entry"
-              :requires {"flow-id" "The flow-id for the entry"
-                         "thread-id" "The thread-id for the entry"
-                         "idx" "The current timeline idx"
-                         "drift" "The drift, one of next-out next-over prev-over next prev at"}
-              :optional {}
-              :returns {"entry" "A map with ..."}}
-
-             "flow-storm-frame-data"
-             {:doc "Return a frame for a fn-call index"
-              :requires {"flow-id" "The flow-id for the entry"
-                         "thread-id" "The thread-id for the entry"
-                         "fn-call-idx" "The fn-call timeline idx"}
-              :optional {}
-              :returns {"frame" "A map with ..."}}
-
-             "flow-storm-pprint"
-             {:doc "Return a pretty printing for a value reference id"
-              :requires {"val-ref" "The value reference id"
-                         "print-length" "A *print-length* val for pprint"
-                         "print-level" "A *print-level* val for pprint"
-                         "print-meta" "A *print-meta* val for pprint"
-                         "pprint" "When true will pretty print, otherwise just print"}
-              :optional {}
-              :returns {"pprint" "A map with :val-str and :val-type"}}}}))
+ descr)
