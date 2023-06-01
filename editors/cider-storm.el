@@ -2,12 +2,12 @@
 
 ;; (add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
 
-(nrepl-dict-get (cider-storm-find-first-fn-call "dev-tester/boo") "form-id")
+;; (nrepl-dict-get (cider-storm-find-first-fn-call "dev-tester/boo") "form-id")
 ;; (cider-var-info "dev-tester/boo")
-(cider-storm-get-form 440181832)
+;; (cider-storm-get-form 440181832)
 ;; (cider-storm-timeline-entry nil 20 7 "next")
 
-(cider-nrepl-send-sync-request `("op" "xxx"))
+;; (cider-nrepl-send-sync-request `("op" "xxx"))
 
 
 ;;;;;;;;;;;;;;;;;;;;

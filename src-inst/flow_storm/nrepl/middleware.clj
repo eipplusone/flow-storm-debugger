@@ -22,35 +22,53 @@
     (update m k :vid)
     m))
 
-(defn find-first-fn-call-code [{:keys [fq-fn-symb]}]
-  `{:status :done
-    :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))})
+(defn find-first-fn-call [{:keys [fq-fn-symb]}]
+  {:code `{:status :done
+           :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))}
+   :post-proc (fn [result]
+                (update result :fn-call value-ref->int :fn-args))})
 
-(defn get-form-code [{:keys [form-id]}]
-  `{:status :done
-    :form (debuggers-api/get-form nil nil ~form-id)})
+(defn get-form [{:keys [form-id]}]
+  {:code `{:status :done
+           :form (debuggers-api/get-form nil nil ~form-id)}
+   :post-proc (fn [result]
+                (update-in result [:form :form/file]
+                           (fn [file-name]
+                             (when-let [file (if (str/starts-with? file-name "/")
+                                               (io/file file-name)
+                                               (io/resource file-name))]
+                               (.getPath file)))))})
 
-(defn timeline-entry-code [{:keys [flow-id thread-id idx drift]}]
-  `{:status :done
-    :entry (debuggers-api/timeline-entry ~(if (number? flow-id) flow-id nil)
-                                         ~thread-id
-                                         ~idx
-                                         ~(keyword drift))})
+(defn timeline-entry [{:keys [flow-id thread-id idx drift]}]
+  {:code `{:status :done
+           :entry (debuggers-api/timeline-entry ~(if (number? flow-id) flow-id nil)
+                                                ~thread-id
+                                                ~idx
+                                                ~(keyword drift))}
+   :post-proc (fn [result]
+                (-> result
+                    (update :entry value-ref->int :fn-args)
+                    (update :entry value-ref->int :result)))})
 
-(defn frame-data-code [{:keys [flow-id thread-id fn-call-idx]}]
-  `{:status :done
-    :frame (-> (debuggers-api/frame-data ~(if (number? flow-id) flow-id nil)
-                                         ~thread-id
-                                         ~fn-call-idx
-                                         {}))})
+(defn frame-data [{:keys [flow-id thread-id fn-call-idx]}]
+  {:code `{:status :done
+           :frame (-> (debuggers-api/frame-data ~(if (number? flow-id) flow-id nil)
+                                                ~thread-id
+                                                ~fn-call-idx
+                                                {}))}
+   :post-proc (fn [result]
+                (-> result
+                    (update :frame value-ref->int :args-vec)
+                    (update :frame value-ref->int :ret)))})
 
-(defn pprint-val-ref-code [{:keys [val-ref print-level print-length print-meta pprint]}]
-  `{:status :done
-    :pprint (debuggers-api/val-pprint (make-value-ref ~val-ref)
-                                      {:print-length ~print-length
-                                       :print-level  ~print-level
-                                       :print-meta?  ~(Boolean/parseBoolean print-meta)
-                                       :pprint?      ~(Boolean/parseBoolean pprint)})})
+(defn pprint-val-ref [{:keys [val-ref print-level print-length print-meta pprint]}]
+  {:code `{:status :done
+           :pprint (debuggers-api/val-pprint (make-value-ref ~val-ref)
+                                             {:print-length ~print-length
+                                              :print-level  ~print-level
+                                              :print-meta?  ~(Boolean/parseBoolean print-meta)
+                                              :pprint?      ~(Boolean/parseBoolean pprint)})}
+   :post-proc identity})
 
 (defn dbg [& args]
   (let [msg (str (pr-str args) "\n")]
@@ -91,13 +109,13 @@
             :else (.send transport response))
       this)))
 
-(defn process-msg [next-handler {:keys [^Transport transport] :as msg} msg-code-gen-fn result-proc-fn cljs?]
-  (let [rt-code (msg-code-gen-fn msg)]
+(defn process-msg [next-handler {:keys [^Transport transport] :as msg} msg-proc-fn cljs?]
+  (let [{:keys [code post-proc]} (msg-proc-fn msg)]
 
     (if cljs?
       ;; ClojureScript handling
-      (let [tr (cljs-transport msg result-proc-fn)
-            cljs-code (pr-str rt-code)]
+      (let [tr (cljs-transport msg post-proc)
+            cljs-code (pr-str code)]
         (dbg "@@@@ CLJS sending code to piggieback " cljs-code)
         (next-handler (assoc msg
                              :transport tr
@@ -106,7 +124,7 @@
                              :ns "cljs.user")))
 
       ;; Clojure handling
-      (let [rsp (response-for msg (result-proc-fn (eval rt-code)))]
+      (let [rsp (response-for msg (post-proc (eval code)))]
         (t/send transport rsp)))))
 
 (defn wrap-flow-storm
@@ -117,98 +135,64 @@
       (case op
         "xxx" (process-msg next-handler ;; @@@@@@@@@@
                            msg
-                           (fn [_] `{:status :done :r (str (type 42))})
-                           identity
+                           (fn [_] {:code `{:status :done :r (str (type 42))}
+                                    :post-proc identity})
                            piggieback?)
-        "flow-storm-find-first-fn-call" (process-msg next-handler
-                                                     msg
-                                                     find-first-fn-call-code
-                                                     (fn [result]
-                                                       (update result :fn-call value-ref->int :fn-args))
-                                                     piggieback?)
-        "flow-storm-get-form" (process-msg next-handler
-                                           msg
-                                           get-form-code
-                                           (fn [result]
-                                             (update-in result [:form :form/file]
-                                                        (fn [file-name]
-                                                          (when-let [file (if (str/starts-with? file-name "/")
-                                                                            (io/file file-name)
-                                                                            (io/resource file-name))]
-                                                            (.getPath file)))))
-                                           piggieback?)
-        "flow-storm-timeline-entry" (process-msg next-handler
-                                                 msg
-                                                 timeline-entry-code
-                                                 (fn [result]
-                                                   (-> result
-                                                       (update :entry value-ref->int :fn-args)
-                                                       (update :entry value-ref->int :result)))
-                                                 piggieback?)
-        "flow-storm-frame-data" (process-msg next-handler
-                                             msg
-                                             frame-data-code
-                                             (fn [result]
-                                               (-> result
-                                                   (update :frame value-ref->int :args-vec)
-                                                   (update :frame value-ref->int :ret)))
-                                             piggieback?)
-        "flow-storm-pprint" (process-msg next-handler
-                                         msg
-                                         pprint-val-ref-code
-                                         identity
-                                         piggieback?)
+        "flow-storm-find-first-fn-call" (process-msg next-handler msg find-first-fn-call piggieback?)
+        "flow-storm-get-form"           (process-msg next-handler msg get-form           piggieback?)
+        "flow-storm-timeline-entry"     (process-msg next-handler msg timeline-entry     piggieback?)
+        "flow-storm-frame-data"         (process-msg next-handler msg frame-data         piggieback?)
+        "flow-storm-pprint"             (process-msg next-handler msg pprint-val-ref     piggieback?)
         (next-handler msg)))))
 
-(def descr (cljs-utils/expects-piggieback
-            {:requires #{}
-             :expects #{}
-             :handles {
-                       "xxx" ;; @@@@@@@@@@
-                       {:doc "xxx"
-                        :requires {}
-                        :optional {}
-                        :returns {"r" ""}}
+(def descriptor
+  (cljs-utils/expects-piggieback
+   {:requires #{}
+    :expects #{}
+    :handles {
+              "xxx" ;; @@@@@@@@@@
+              {:doc "xxx"
+               :requires {}
+               :optional {}
+               :returns {"r" ""}}
 
-                       "flow-storm-find-first-fn-call"
-                       {:doc "Find the first FnCall for a symbol"
-                        :requires {"fq-fn-symb" "The Fully qualified function symbol"}
-                        :optional {}
-                        :returns {"fn-call" "A map with ..."}}
+              "flow-storm-find-first-fn-call"
+              {:doc "Find the first FnCall for a symbol"
+               :requires {"fq-fn-symb" "The Fully qualified function symbol"}
+               :optional {}
+               :returns {"fn-call" "A map with ..."}}
 
-                       "flow-storm-get-form"
-                       {:doc "Return a registered form"
-                        :requires {"form-id" "The id of the form"}
-                        :optional {}
-                        :returns {"form" "A map with ..."}}
+              "flow-storm-get-form"
+              {:doc "Return a registered form"
+               :requires {"form-id" "The id of the form"}
+               :optional {}
+               :returns {"form" "A map with ..."}}
 
-                       "flow-storm-timeline-entry"
-                       {:doc "Return a timeline entry"
-                        :requires {"flow-id" "The flow-id for the entry"
-                                   "thread-id" "The thread-id for the entry"
-                                   "idx" "The current timeline idx"
-                                   "drift" "The drift, one of next-out next-over prev-over next prev at"}
-                        :optional {}
-                        :returns {"entry" "A map with ..."}}
+              "flow-storm-timeline-entry"
+              {:doc "Return a timeline entry"
+               :requires {"flow-id" "The flow-id for the entry"
+                          "thread-id" "The thread-id for the entry"
+                          "idx" "The current timeline idx"
+                          "drift" "The drift, one of next-out next-over prev-over next prev at"}
+               :optional {}
+               :returns {"entry" "A map with ..."}}
 
-                       "flow-storm-frame-data"
-                       {:doc "Return a frame for a fn-call index"
-                        :requires {"flow-id" "The flow-id for the entry"
-                                   "thread-id" "The thread-id for the entry"
-                                   "fn-call-idx" "The fn-call timeline idx"}
-                        :optional {}
-                        :returns {"frame" "A map with ..."}}
+              "flow-storm-frame-data"
+              {:doc "Return a frame for a fn-call index"
+               :requires {"flow-id" "The flow-id for the entry"
+                          "thread-id" "The thread-id for the entry"
+                          "fn-call-idx" "The fn-call timeline idx"}
+               :optional {}
+               :returns {"frame" "A map with ..."}}
 
-                       "flow-storm-pprint"
-                       {:doc "Return a pretty printing for a value reference id"
-                        :requires {"val-ref" "The value reference id"
-                                   "print-length" "A *print-length* val for pprint"
-                                   "print-level" "A *print-level* val for pprint"
-                                   "print-meta" "A *print-meta* val for pprint"
-                                   "pprint" "When true will pretty print, otherwise just print"}
-                        :optional {}
-                        :returns {"pprint" "A map with :val-str and :val-type"}}}}))
+              "flow-storm-pprint"
+              {:doc "Return a pretty printing for a value reference id"
+               :requires {"val-ref" "The value reference id"
+                          "print-length" "A *print-length* val for pprint"
+                          "print-level" "A *print-level* val for pprint"
+                          "print-meta" "A *print-meta* val for pprint"
+                          "pprint" "When true will pretty print, otherwise just print"}
+               :optional {}
+               :returns {"pprint" "A map with :val-str and :val-type"}}}}))
 
-(set-descriptor!
- #'wrap-flow-storm
- descr)
+(set-descriptor! #'wrap-flow-storm descriptor)
