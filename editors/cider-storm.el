@@ -2,7 +2,8 @@
 
 ;; (add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
 
-;; (cider-storm-find-first-fn-call "dev-tester/other-function")
+(cider-storm-find-first-fn-call "dev-tester/boo")
+;; (cider-var-info "dev-tester/boo")
 ;; (cider-storm-get-form 1451539897)
 ;; (cider-storm-timeline-entry nil 20 7 "next")
 
@@ -19,17 +20,17 @@
 ;; Middleware api ;;
 ;;;;;;;;;;;;;;;;;;;;
 
-(defun cider-storm-find-first-fn-call (fq-fn-symb)  
+(defun cider-storm-find-first-fn-call (fq-fn-symb)
   (thread-first (cider-nrepl-send-sync-request `("op"         "flow-storm-find-first-fn-call"
 												 "fq-fn-symb" ,fq-fn-symb))
 				(nrepl-dict-get "fn-call")))
 
-(defun cider-storm-get-form (form-id)    
+(defun cider-storm-get-form (form-id)
   (thread-first (cider-nrepl-send-sync-request `("op"         "flow-storm-get-form"
 												 "form-id" ,form-id))
 				(nrepl-dict-get "form")))
 
-(defun cider-storm-timeline-entry (flow-id thread-id idx drift)    
+(defun cider-storm-timeline-entry (flow-id thread-id idx drift)
   (thread-first (cider-nrepl-send-sync-request `("op"        "flow-storm-timeline-entry"
 												 "flow-id"   ,flow-id
 												 "thread-id" ,thread-id
@@ -37,14 +38,14 @@
 												 "drift"     ,drift))
 				(nrepl-dict-get "entry")))
 
-(defun cider-storm-frame-data (flow-id thread-id fn-call-idx)    
+(defun cider-storm-frame-data (flow-id thread-id fn-call-idx)
   (thread-first (cider-nrepl-send-sync-request `("op"          "flow-storm-frame-data"
 												 "flow-id"     ,flow-id
 												 "thread-id"   ,thread-id
 												 "fn-call-idx" ,fn-call-idx))
 				(nrepl-dict-get "frame")))
 
-(defun cider-storm-pprint-val-ref (v-ref print-length print-level print-meta pprint)    
+(defun cider-storm-pprint-val-ref (v-ref print-length print-level print-meta pprint)
   (thread-first (cider-nrepl-send-sync-request `("op"          "flow-storm-pprint"
 												 "val-ref"      ,v-ref
 												 "print-length" ,print-length
@@ -170,7 +171,8 @@
   (cider-try-symbol-at-point
    "Debug fn"
    (lambda (var-name)
-	 (let* ((info (cider-var-info var-name))
+	 (let* ((info (cider-var-info "dev-tester/boo" ;;var-name
+								  ))
 			(fn-ns (nrepl-dict-get info "ns"))
 			(fn-name (nrepl-dict-get info "name"))
             (fq-fn-symb (format "%s/%s" fn-ns fn-name)))

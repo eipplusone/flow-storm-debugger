@@ -22,53 +22,39 @@
     (update m k :vid)
     m))
 
-(defn find-first-fn-call-code [{:keys [fq-fn-symb] :as msg}]
+(defn find-first-fn-call-code [{:keys [fq-fn-symb]}]
   `{:status :done
     :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))})
 
-(defn find-first-fn-call [{:keys [fq-fn-symb] :as msg}]
-  (response-for msg {:status :done
-                     :fn-call (-> (debuggers-api/find-first-fn-call (symbol fq-fn-symb))
-                                  (value-ref->int :fn-args))}))
+(defn get-form-code [{:keys [form-id]}]
+  `{:status :done
+    :form (debuggers-api/get-form nil nil ~form-id)})
 
-(defn get-form [{:keys [form-id] :as msg}]
-  (let [form (debuggers-api/get-form nil nil form-id)
-        form (update form :form/file (fn [file-name]
-                                       (when-let [file (if (str/starts-with? file-name "/")
-                                                         (io/file file-name)
-                                                         (io/resource file-name))]
-                                         (.getPath file))))]
-    (when-not (:form/file form)
-      (println "Can't get the file path for form %s" form))
+(defn timeline-entry-code [{:keys [flow-id thread-id idx drift]}]
+  `{:status :done
+    :entry (debuggers-api/timeline-entry ~(if (number? flow-id) flow-id nil)
+                                         ~thread-id
+                                         ~idx
+                                         ~(keyword drift))})
 
-    (response-for msg {:status :done
-                       :form form})))
+(defn frame-data-code [{:keys [flow-id thread-id fn-call-idx]}]
+  `{:status :done
+    :frame (-> (debuggers-api/frame-data ~(if (number? flow-id) flow-id nil)
+                                         ~thread-id
+                                         ~fn-call-idx
+                                         {}))})
 
-(defn timeline-entry [{:keys [flow-id thread-id idx drift] :as msg}]
-  (response-for msg {:status :done
-                     :entry (-> (debuggers-api/timeline-entry (if (number? flow-id) flow-id nil)
-                                                              thread-id
-                                                              idx
-                                                              (keyword drift))
-                                (value-ref->int :fn-args)
-                                (value-ref->int :result))}))
+(defn pprint-val-ref-code [{:keys [val-ref print-level print-length print-meta pprint]}]
+  `{:status :done
+    :pprint (debuggers-api/val-pprint (make-value-ref ~val-ref)
+                                      {:print-length ~print-length
+                                       :print-level  ~print-level
+                                       :print-meta?  ~(Boolean/parseBoolean print-meta)
+                                       :pprint?      ~(Boolean/parseBoolean pprint)})})
 
-(defn frame-data [{:keys [flow-id thread-id fn-call-idx] :as msg}]
-  (response-for msg {:status :done
-                     :frame (-> (debuggers-api/frame-data (if (number? flow-id) flow-id nil)
-                                                          thread-id
-                                                          fn-call-idx
-                                                          {})
-                                (value-ref->int :args-vec)
-                                (value-ref->int :ret))}))
-
-(defn pprint-val-ref [{:keys [val-ref print-level print-length print-meta pprint] :as msg}]
-  (response-for msg {:status :done
-                     :pprint (debuggers-api/val-pprint (make-value-ref val-ref)
-                                                       {:print-length print-length
-                                                        :print-level  print-level
-                                                        :print-meta?  (Boolean/parseBoolean print-meta)
-                                                        :pprint?      (Boolean/parseBoolean pprint)})}))
+(defn dbg [& args]
+  (let [msg (str (pr-str args) "\n")]
+    (spit "./XXXXX.tmp" msg :append true)))
 
 (defn cljs-transport
   [{:keys [^Transport transport] :as msg} result-proc-fn]
@@ -80,10 +66,15 @@
       (.recv transport timeout))
 
     (send [this response]
+      (dbg "@@@ CLJS got response" response)
       (cond (contains? response :value)
-            (let [rsp-val (read-string (:value response))
+            (let [_ (dbg "@@@ CLJS (:value response)" (:value response))
+                  rsp-val (read-string (:value response))
+                  _ (dbg "@@@@ after reading string")
                   processed-val (result-proc-fn rsp-val)
+                  _ (dbg "@@@@ after processed-val" processed-val)
                   rsp (response-for msg processed-val)]
+              (dbg "@@@@ sending response" rsp)
               (.send transport rsp))
 
             ;; If the eval errored, propagate the exception as error in the
@@ -105,6 +96,7 @@
       ;; ClojureScript handling
       (let [tr (cljs-transport msg result-proc-fn)
             cljs-code (pr-str rt-code)]
+        (dbg "@@@@ CLJS sending code to piggieback " cljs-code)
         (next-handler (assoc msg
                              :transport tr
                              :op "eval"
@@ -127,14 +119,39 @@
                                                      (fn [result]
                                                        (update result :fn-call value-ref->int :fn-args))
                                                      piggieback?)
-        (next-handler msg)))
-    #_(case op
-        "flow-storm-find-first-fn-call" (t/send transport (find-first-fn-call msg))
-        "flow-storm-get-form"           (t/send transport (get-form msg))
-        "flow-storm-timeline-entry"     (t/send transport (timeline-entry msg))
-        "flow-storm-frame-data"         (t/send transport (frame-data msg))
-        "flow-storm-pprint"             (t/send transport (pprint-val-ref msg))
-        (h msg))))
+        "flow-storm-get-form" (process-msg next-handler
+                                           msg
+                                           get-form-code
+                                           (fn [result]
+                                             (update-in result [:form :form/file]
+                                                        (fn [file-name]
+                                                          (when-let [file (if (str/starts-with? file-name "/")
+                                                                            (io/file file-name)
+                                                                            (io/resource file-name))]
+                                                            (.getPath file)))))
+                                           piggieback?)
+        "flow-storm-timeline-entry" (process-msg next-handler
+                                                 msg
+                                                 timeline-entry-code
+                                                 (fn [result]
+                                                   (-> result
+                                                       (update :entry value-ref->int :fn-args)
+                                                       (update :entry value-ref->int :result)))
+                                                 piggieback?)
+        "flow-storm-frame-data" (process-msg next-handler
+                                             msg
+                                             frame-data-code
+                                             (fn [result]
+                                               (-> result
+                                                   (update :frame value-ref->int :args-vec)
+                                                   (update :frame value-ref->int :ret)))
+                                             piggieback?)
+        "flow-storm-pprint" (process-msg next-handler
+                                         msg
+                                         pprint-val-ref-code
+                                         identity
+                                         piggieback?)
+        (next-handler msg)))))
 
 (set-descriptor!
  #'wrap-flow-storm

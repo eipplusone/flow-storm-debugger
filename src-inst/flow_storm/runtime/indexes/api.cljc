@@ -306,7 +306,8 @@
     (index-protos/set-thread-blocked flow-thread-registry flow-id thread-id nil)
     (events/publish-event! (events/make-threads-updated-event flow-id))))
 
-(defn find-first-fn-call [fq-fn-call-symb]  
+(defn find-first-fn-call [fq-fn-call-symb]
+  (js/console.log (str "@@@@@@@@@ find-first-fn-call" fq-fn-call-symb " > " (type flow-thread-registry)))
   (some (fn [[flow-id thread-id]]
           (let [{:keys [timeline-index]} (get-thread-indexes flow-id thread-id)]
             (when-let [fn-call (index-protos/timeline-find-entry
