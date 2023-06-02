@@ -23,6 +23,12 @@
     (update m k :vid)
     m))
 
+(defn trace-count [{:keys [flow-id thread-id]}]
+  {:code `{:status :done
+           :trace-cnt (debuggers-api/timeline-count ~(if (number? flow-id) flow-id nil)
+                                                    ~thread-id)}
+   :post-proc identity})
+
 (defn find-first-fn-call [{:keys [fq-fn-symb]}]
   {:code `{:status :done
            :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))}
@@ -129,6 +135,7 @@
   (fn [{:keys [op] :as msg}]
     (let [piggieback? (or cljs-utils/cider-piggieback? cljs-utils/nrepl-piggieback?)]
       (case op
+        "flow-storm-trace-count"        (process-msg next-handler msg trace-count        piggieback?)
         "flow-storm-find-first-fn-call" (process-msg next-handler msg find-first-fn-call piggieback?)
         "flow-storm-get-form"           (process-msg next-handler msg get-form           piggieback?)
         "flow-storm-timeline-entry"     (process-msg next-handler msg timeline-entry     piggieback?)
@@ -153,7 +160,14 @@
    (expects-shadow-cljs-middleware
     {:requires #{"clone" #'wrap-caught #'wrap-print}
      :expects #{"eval"}
-     :handles {"flow-storm-find-first-fn-call"
+     :handles {"flow-storm-trace-count"
+               {:doc "Get the traces count for a thread"
+                :requires {"flow-id" "The id of the flow"
+                           "thread-id" "The id of the thread"}
+                :optional {}
+                :returns {"trace-cnt" "A number with the total traces"}}
+
+               "flow-storm-find-first-fn-call"
                {:doc "Find the first FnCall for a symbol"
                 :requires {"fq-fn-symb" "The Fully qualified function symbol"}
                 :optional {}

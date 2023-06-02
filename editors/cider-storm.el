@@ -1,6 +1,6 @@
 (require 'cider)
 
-(add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
+;;(add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
 
 ;; (nrepl-dict-get (cider-storm-find-first-fn-call "dev-tester/boo") "form-id")
 ;; (cider-var-info "dev-tester/boo")
@@ -15,11 +15,19 @@
 (defvar cider-storm-current-flow-id nil)
 (defvar cider-storm-current-thread-id nil)
 (defvar cider-storm-current-entry nil)
+(defvar cider-storm-initial-entry nil)
 (defvar cider-storm-current-frame nil)
+(defvar cider-storm-current-thread-trace-cnt nil)
 
 ;;;;;;;;;;;;;;;;;;;;
 ;; Middleware api ;;
 ;;;;;;;;;;;;;;;;;;;;
+
+(defun cider-storm-trace-cnt (flow-id thread-id)
+  (thread-first (cider-nrepl-send-sync-request `("op"        "flow-storm-trace-count"
+												 "flow-id"   ,flow-id
+												 "thread-id" ,thread-id))
+				(nrepl-dict-get "trace-cnt")))
 
 (defun cider-storm-find-first-fn-call (fq-fn-symb)
   (thread-first (cider-nrepl-send-sync-request `("op"         "flow-storm-find-first-fn-call"
@@ -66,8 +74,9 @@
 	(if (and form-file form-line)
 		(when-let* ((buf (cider--find-buffer-for-file form-file)))
 		  (with-current-buffer buf
-			(forward-line (- form-line (line-number-at-pos)))))        
-		(message "Opening forms without file and line not supported yet."))))
+			(forward-line (- form-line (line-number-at-pos)))
+			form-line))        
+	  (message "Opening forms without file and line not supported yet."))))
 
 (defun cider-storm-entry-type (entry)
   (pcase (nrepl-dict-get entry "type")
@@ -75,33 +84,56 @@
 	("fn-return" 'fn-return)
 	("expr"      'expr)))
 
-(defun cider-storm-display-step (form-id entry)
+(defun cider-storm-show-header-overlay (form-line entry-idx total-entries)
+  (let* ((form-beg-pos (save-excursion (goto-line (- form-line 1)) (point)))
+         (props '(face cider-debug-code-overlay-face priority 2000))
+		 (o (make-overlay form-beg-pos form-beg-pos (current-buffer))))
+	(overlay-put o 'category 'debug-code)
+	(overlay-put o 'cider-temporary t)
+	(overlay-put o 'face 'cider-debug-code-overlay-face)
+	(overlay-put o 'priority 2000)
+	(overlay-put o 'before-string (format "CiderStorm - Debugging (%d/%d), press h for help" entry-idx total-entries))
+    (push #'cider--delete-overlay (overlay-get o 'modification-hooks))))
 
-  (cider-storm-select-form form-id)
-
-  (let* ((entry-type (cider-storm-entry-type entry)))
+(defun cider-storm-display-step (form-id entry trace-cnt)
+  (let* ((form-line (cider-storm-select-form form-id))
+		 (entry-type (cider-storm-entry-type entry))
+		 (entry-idx (nrepl-dict-get entry "idx")))
 
 	(when-let* ((coord (nrepl-dict-get entry "coord")))
 	  (cider--debug-move-point coord))
 
+	(cider--debug-remove-overlays)
+
+	(when form-line
+	  (cider-storm-show-header-overlay form-line entry-idx trace-cnt))
+	
 	(when (or (eq entry-type 'fn-return)
 			  (eq entry-type 'expr))
 	  (let* ((val-ref (nrepl-dict-get entry "result"))
 			 (val-pprint (cider-storm-pprint-val-ref val-ref
-													50
-													3
-													nil
-													nil))
+													 50
+													 3
+													 nil
+													 nil))
 			 (val-type (nrepl-dict-get val-pprint "val-type"))
 			 (val-str (nrepl-dict-get val-pprint "val-str")))
-
-		(cider--debug-remove-overlays)
+		
 		(cider--debug-display-result-overlay val-str)))))
 
 (defun cider-storm-show-help ()
-  (let* ((help-text "INSERT HELP HERE")
+  (let* ((help-text "Keybidings
+
+P - Step prev over. Go to the previous recorded step on the same frame.
+p - Step prev. Go to the previous recorded step.
+n - Step next. Go to the next recorded step.
+N - Step next over. Go to the next recorded step on the same frame.
+^ - Step out. Go to the next recorded step after this frame.
+< - Step first. Go to the first recorded step for the function you called cider-storm-debug-current-fn on.
+> - Step last. Go to the last recorded step for the function you called cider-storm-debug-current-fn on. ")
+		 
 		 (help-buf (cider-popup-buffer "*cider-storm-help*" 'select)))
-	(with-current-buffer val-buffer
+	(with-current-buffer help-buf
 	  (let ((inhibit-read-only t))			
 		(insert help-text)))))
 
@@ -129,7 +161,9 @@
 		 (changing-frame? (not (eq curr-fn-call-idx next-fn-call-idx)))
 		 (curr-frame (if changing-frame?
 						 (let* ((first-frame (cider-storm-frame-data flow-id thread-id 0))
-								(first-entry (cider-storm-timeline-entry flow-id thread-id 0 "at")))
+								(first-entry (cider-storm-timeline-entry flow-id thread-id 0 "at"))
+								(trace-cnt (cider-storm-trace-cnt flow-id thread-id)))
+						   (setq cider-storm-current-thread-trace-cnt trace-cnt)
 						   (setq cider-storm-current-frame first-frame)
 						   (setq cider-storm-current-entry first-entry)
 						   first-frame)
@@ -148,9 +182,18 @@
 	(when changing-frame?
 	  (setq cider-storm-current-frame next-frame))
 
-	(cider-storm-display-step next-form-id next-entry)
+	(cider-storm-display-step next-form-id next-entry cider-storm-current-thread-trace-cnt)
 	
 	(setq cider-storm-current-entry next-entry)))
+
+(defun cider-storm-jump-to (n)
+  (let* ((entry (cider-storm-timeline-entry cider-storm-current-flow-id
+											cider-storm-current-thread-id
+                                            n
+											"at")))
+	(cider-storm-jump-to-code cider-storm-current-flow-id
+							  cider-storm-current-thread-id
+							  entry)))
 
 (defun cider-storm-step (drift)
   (interactive)
@@ -185,7 +228,8 @@
 				 (setq cider-storm-current-entry fn-call)
 				 (setq cider-storm-current-flow-id flow-id)
 				 (setq cider-storm-current-thread-id thread-id)
-				 (cider-storm-display-step form-id fn-call)
+				 (setq cider-storm-initial-entry fn-call)
+				 (cider-storm-display-step form-id fn-call cider-storm-current-thread-trace-cnt)
 				 (cider-storm-debugging-mode 1))
 			 (message "No recording found for %s/%s" fn-ns fn-name))))))))
 
@@ -202,7 +246,12 @@
   ;; The minor mode bindings.
   :keymap
   '(("q" . (lambda () (interactive) (cider--debug-remove-overlays) (cider-storm-debugging-mode -1)))
+	("^" . (lambda () (interactive) (cider-storm-step "next-out")))
 	("n" . (lambda () (interactive) (cider-storm-step "next")))
+	("N" . (lambda () (interactive) (cider-storm-step "next-over")))
 	("p" . (lambda () (interactive) (cider-storm-step "prev")))
+	("P" . (lambda () (interactive) (cider-storm-step "prev-over")))
+	("<" . (lambda () (interactive) (cider-storm-jump-to (nrepl-dict-get cider-storm-initial-entry "idx"))))
+	(">" . (lambda () (interactive) (cider-storm-jump-to (nrepl-dict-get cider-storm-initial-entry "ret-idx"))))
 	("h" . (lambda () (interactive) (cider-storm-show-help)))
 	("." . (lambda () (interactive) (cider-storm-pprint-current-entry)))))
