@@ -8,6 +8,7 @@
             [nrepl.bencode]
             [clojure.java.io :as io]
             [clojure.string :as str]
+            [flow-storm.form-pprinter :as form-pprinter]
             [cider.nrepl.middleware.util.cljs :as cljs-utils]
             [nrepl.middleware.caught :as caught :refer [wrap-caught]]
             [nrepl.middleware.print :refer [wrap-print]])
@@ -39,12 +40,17 @@
   {:code `{:status :done
            :form (debuggers-api/get-form nil nil ~form-id)}
    :post-proc (fn [result]
-                (update-in result [:form :form/file]
-                           (fn [file-name]
-                             (when-let [file (if (str/starts-with? file-name "/")
-                                               (io/file file-name)
-                                               (io/resource file-name))]
-                               (.getPath file)))))})
+                (-> result
+                    (update-in [:form :form/file]
+                               (fn [file-name]
+                                 (when-let [file (when (not= file-name "NO_SOURCE_PATH")
+                                                   (if (str/starts-with? file-name "/")
+                                                     (io/file file-name)
+                                                     (io/resource file-name)))]
+                                   (.getPath file))))
+                    (assoc-in [:form :form/form-pprint]
+                              (form-pprinter/code-pprint
+                               (-> result :form :form/form)) )))})
 
 (defn timeline-entry [{:keys [flow-id thread-id idx drift]}]
   {:code `{:status :done

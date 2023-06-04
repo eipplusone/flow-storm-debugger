@@ -71,12 +71,23 @@
   (let* ((form (cider-storm-get-form form-id))
 		 (form-file (nrepl-dict-get form "form/file"))
 		 (form-line (nrepl-dict-get form "form/line")))
+    	
 	(if (and form-file form-line)
 		(when-let* ((buf (cider--find-buffer-for-file form-file)))
 		  (with-current-buffer buf
+			(cider-storm-debugging-mode 1)
 			(forward-line (- form-line (line-number-at-pos)))
-			form-line))        
-	  (message "Opening forms without file and line not supported yet."))))
+			form-line))
+
+	  (let* ((pprinted-form (nrepl-dict-get form "form/form-pprint")) 
+			 (dbg-buf (cider-popup-buffer "*cider-storm-dbg*" 'select 'clojure-mode)))
+		(with-current-buffer dbg-buf
+		  (let ((inhibit-read-only t))
+			(cider-storm-debugging-mode 1)
+			(insert "\n")
+			(insert pprinted-form)
+			(goto-line 2)
+			2))))))
 
 (defun cider-storm-entry-type (entry)
   (pcase (nrepl-dict-get entry "type")
@@ -229,8 +240,7 @@ N - Step next over. Go to the next recorded step on the same frame.
 				 (setq cider-storm-current-flow-id flow-id)
 				 (setq cider-storm-current-thread-id thread-id)
 				 (setq cider-storm-initial-entry fn-call)
-				 (cider-storm-display-step form-id fn-call cider-storm-current-thread-trace-cnt)
-				 (cider-storm-debugging-mode 1))
+				 (cider-storm-display-step form-id fn-call cider-storm-current-thread-trace-cnt))
 			 (message "No recording found for %s/%s" fn-ns fn-name))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;
