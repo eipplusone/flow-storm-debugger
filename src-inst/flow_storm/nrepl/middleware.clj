@@ -89,6 +89,18 @@
                 {:status :done
                  :pprint pprint-str})})
 
+(defn bindings [{:keys [flow-id thread-id idx all-frame]}]
+  {:code `(debuggers-api/bindings ~(if (number? flow-id) flow-id nil)
+                                  ~thread-id
+                                  ~idx
+                                  {:all-frame? ~(Boolean/parseBoolean all-frame)})
+   :post-proc (fn [bindings]
+                {:status :done
+                 :bindings (reduce-kv (fn [r k vref]
+                                        (assoc r k (:vid vref)))
+                                      {}
+                                      bindings)})})
+
 (defn clear-recordings [_]
   {:code `(debuggers-api/clear-recordings)
    :post-proc (fn [_]
@@ -159,6 +171,7 @@
         "flow-storm-frame-data"       (process-msg next-handler msg frame-data       piggieback?)
         "flow-storm-pprint"           (process-msg next-handler msg pprint-val-ref   piggieback?)
         "flow-storm-clear-recordings" (process-msg next-handler msg clear-recordings piggieback?)
+        "flow-storm-bindings"         (process-msg next-handler msg bindings piggieback?)
         (next-handler msg)))))
 
 (defn expects-shadow-cljs-middleware
@@ -228,6 +241,15 @@
                            "pprint" "When true will pretty print, otherwise just print"}
                 :optional {}
                 :returns {"pprint" "A map with {:keys [val-str val-type]}"}}
+
+               "flow-storm-bindings"
+               {:doc "Return all bindings for the provided idx"
+                :requires {"flow-id" "The id of the flow"
+                           "thread-id" "The id of the thread"
+                           "idx" "The current timeline index"
+                           "all-frame" "When true return all the bindings for the frame, not just the current visible ones"}
+                :optional {}
+                :returns {"bindings" "A map with {bind-symb val-ref-id}"}}
 
                "flow-storm-clear-recordings"
                {:doc "Clears all flows recordings"

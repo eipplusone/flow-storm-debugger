@@ -2,7 +2,7 @@
 
 ;;(add-to-list 'cider-jack-in-nrepl-middlewares "flow-storm.nrepl.middleware/wrap-flow-storm")
 
-;; (nrepl-dict-get (cider-storm-find-first-fn-call "dev-tester/boo") "form-id")
+;; (nrepl-dict-get (cider-storm-find-fn-call "dev-tester/boo" 0 nil) "form-id")
 ;; (cider-var-info "dev-tester/boo")
 ;; (cider-storm-get-form 440181832)
 ;; (cider-storm-timeline-entry nil 20 7 "next")
@@ -29,9 +29,11 @@
 												 "thread-id" ,thread-id))
 				(nrepl-dict-get "trace-cnt")))
 
-(defun cider-storm-find-first-fn-call (fq-fn-symb)
-  (thread-first (cider-nrepl-send-sync-request `("op"         "flow-storm-find-first-fn-call"
-												 "fq-fn-symb" ,fq-fn-symb))
+(defun cider-storm-find-fn-call (fq-fn-symb from-idx from-back)
+  (thread-first (cider-nrepl-send-sync-request `("op"         "flow-storm-find-fn-call"
+												 "fq-fn-symb" ,fq-fn-symb
+												 "from-idx"   ,from-idx
+												 "from-back"  ,(if from-back "true" "false")))
 				(nrepl-dict-get "fn-call")))
 
 (defun cider-storm-get-form (form-id)
@@ -63,14 +65,25 @@
 												 "pprint"       ,(if pprint     "true" "false")))
 				(nrepl-dict-get "pprint")))
 
+(defun cider-storm-bindings (flow-id thread-id idx all-frame)
+  (thread-first (cider-nrepl-send-sync-request `("op"          "flow-storm-bindings"
+												 "flow-id"   ,flow-id
+												 "thread-id" ,thread-id
+												 "idx"       ,idx
+                                                 "all-frame" ,(if all-frame "true" "false")))
+				(nrepl-dict-get "bindings")))
+
+(defun cider-storm-clear-recordings ()
+  (cider-nrepl-send-sync-request `("op" "flow-storm-clear-recordings")))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Debugger implementation ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun cider-storm-select-form (form-id)
   (let* ((form (cider-storm-get-form form-id))
-		 (form-file (nrepl-dict-get form "form/file"))
-		 (form-line (nrepl-dict-get form "form/line")))
+		 (form-file (nrepl-dict-get form "file"))
+		 (form-line (nrepl-dict-get form "line")))
     	
 	(if (and form-file form-line)
 		(when-let* ((buf (cider--find-buffer-for-file form-file)))
@@ -79,7 +92,7 @@
 			(forward-line (- form-line (line-number-at-pos)))
 			form-line))
 
-	  (let* ((pprinted-form (nrepl-dict-get form "form/form-pprint")) 
+	  (let* ((pprinted-form (nrepl-dict-get form "form-pprint")) 
 			 (dbg-buf (cider-popup-buffer "*cider-storm-dbg*" 'select 'clojure-mode)))
 		(with-current-buffer dbg-buf
 		  (let ((inhibit-read-only t))
@@ -141,7 +154,13 @@ n - Step next. Go to the next recorded step.
 N - Step next over. Go to the next recorded step on the same frame.
 ^ - Step out. Go to the next recorded step after this frame.
 < - Step first. Go to the first recorded step for the function you called cider-storm-debug-current-fn on.
-> - Step last. Go to the last recorded step for the function you called cider-storm-debug-current-fn on. ")
+> - Step last. Go to the last recorded step for the function you called cider-storm-debug-current-fn on.
+. - Pprint current value.
+i - Inspect current value using the Cider inspector.
+D - Define all recorded bindings for this frame (scope capture like).
+x - Clear recordings.
+h - Prints this help.
+q - Quit the debugger mode.")
 		 
 		 (help-buf (cider-popup-buffer "*cider-storm-help*" 'select)))
 	(with-current-buffer help-buf
@@ -220,6 +239,30 @@ N - Step next over. Go to the next recorded step on the same frame.
 
 	  (message "Not pointing at any recording entry."))))
 
+
+(defun cider-storm-define-all-bindings-for-frame ()
+  (let* ((bindings (cider-storm-bindings cider-storm-current-flow-id
+										 cider-storm-current-thread-id
+										 (nrepl-dict-get cider-storm-current-entry "idx")
+										 't)))
+	(nrepl-dict-map
+	 (lambda (bind-name bind-val-id)
+	   (cider-interactive-eval (format "(def %s (flow-storm.runtime.values/deref-value (flow-storm.types/make-value-ref %d)))"
+									   bind-name
+									   bind-val-id)))
+	 bindings)))
+
+(defun cider-storm-inspect-current-entry ()
+  (let* ((entry-type (cider-storm-entry-type cider-storm-current-entry)))
+	(if (or (eq entry-type 'fn-return)
+			(eq entry-type 'expr))
+
+		(let* ((val-ref (nrepl-dict-get cider-storm-current-entry "result")))
+		  (cider-inspect-expr (format "(flow-storm.runtime.values/deref-value (flow-storm.types/make-value-ref %d))" val-ref)
+							  (cider-current-ns)))
+	  		
+		(message "You are currently positioned in a FnCall which is not inspectable."))))
+
 (defun cider-storm-debug-current-fn ()
   (interactive)
 
@@ -231,7 +274,7 @@ N - Step next over. Go to the next recorded step on the same frame.
 			(fn-name (nrepl-dict-get info "name"))
             (fq-fn-symb (format "%s/%s" fn-ns fn-name)))
 	   (when (and fn-ns fn-name)
-         (let* ((fn-call (cider-storm-find-first-fn-call fq-fn-symb)))
+         (let* ((fn-call (cider-storm-find-fn-call fq-fn-symb 0 nil)))
 		   (if fn-call
 			   (let* ((form-id (nrepl-dict-get fn-call "form-id"))
 					  (flow-id (nrepl-dict-get fn-call "flow-id"))
@@ -264,4 +307,7 @@ N - Step next over. Go to the next recorded step on the same frame.
 	("<" . (lambda () (interactive) (cider-storm-jump-to (nrepl-dict-get cider-storm-initial-entry "idx"))))
 	(">" . (lambda () (interactive) (cider-storm-jump-to (nrepl-dict-get cider-storm-initial-entry "ret-idx"))))
 	("h" . (lambda () (interactive) (cider-storm-show-help)))
-	("." . (lambda () (interactive) (cider-storm-pprint-current-entry)))))
+	("." . (lambda () (interactive) (cider-storm-pprint-current-entry)))
+	("x" . (lambda () (interactive) (cider-storm-clear-recordings)))
+	("i" . (lambda () (interactive) (cider-storm-inspect-current-entry)))
+	("D" . (lambda () (interactive) (cider-storm-define-all-bindings-for-frame)))))
