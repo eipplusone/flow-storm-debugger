@@ -306,12 +306,13 @@
     (index-protos/set-thread-blocked flow-thread-registry flow-id thread-id nil)
     (events/publish-event! (events/make-threads-updated-event flow-id))))
 
-(defn find-first-fn-call [fq-fn-call-symb]  
+(defn find-fn-call [fq-fn-call-symb from-idx {:keys [from-back?]}]  
   (some (fn [[flow-id thread-id]]
           (let [{:keys [timeline-index]} (get-thread-indexes flow-id thread-id)]
             (when-let [fn-call (index-protos/timeline-find-entry
                                 timeline-index
-                                0
+                                from-idx
+                                from-back?
                                 (fn [entry]
                                   (and (fn-call-trace/fn-call-trace? entry)
                                        (= (fn-call-trace/get-fn-ns entry)   (namespace fq-fn-call-symb))

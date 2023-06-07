@@ -25,63 +25,74 @@
     m))
 
 (defn trace-count [{:keys [flow-id thread-id]}]
-  {:code `{:status :done
-           :trace-cnt (debuggers-api/timeline-count ~(if (number? flow-id) flow-id nil)
-                                                    ~thread-id)}
-   :post-proc identity})
+  {:code `(debuggers-api/timeline-count ~(if (number? flow-id) flow-id nil)
+                                        ~thread-id)
+   :post-proc (fn [cnt]
+                {:status :done
+                 :trace-cnt cnt})})
 
-(defn find-first-fn-call [{:keys [fq-fn-symb]}]
-  {:code `{:status :done
-           :fn-call (debuggers-api/find-first-fn-call (symbol ~fq-fn-symb))}
-   :post-proc (fn [result]
-                (update result :fn-call value-ref->int :fn-args))})
+(defn find-fn-call [{:keys [fq-fn-symb from-idx from-back]}]
+  {:code `(debuggers-api/find-fn-call (symbol ~fq-fn-symb)
+                                      ~from-idx
+                                      {:from-back? ~(Boolean/parseBoolean from-back)})
+   :post-proc (fn [fn-call]
+                {:status :done
+                 :fn-call (value-ref->int fn-call :fn-args)})})
 
 (defn get-form [{:keys [form-id]}]
-  {:code `{:status :done
-           :form (debuggers-api/get-form nil nil ~form-id)}
-   :post-proc (fn [result]
-                (-> result
-                    (update-in [:form :form/file]
-                               (fn [file-name]
-                                 (when-let [file (when (not= file-name "NO_SOURCE_PATH")
-                                                   (if (str/starts-with? file-name "/")
-                                                     (io/file file-name)
-                                                     (io/resource file-name)))]
-                                   (.getPath file))))
-                    (assoc-in [:form :form/form-pprint]
-                              (form-pprinter/code-pprint
-                               (-> result :form :form/form)) )))})
+  {:code `(debuggers-api/get-form nil nil ~form-id)
+   :post-proc (fn [form]
+                (let [{:keys [form/id form/form form/ns form/def-kind form/file form/line]} form
+                      file-path (when-let [f (when (not= file "NO_SOURCE_PATH")
+                                               (if (str/starts-with? file "/")
+                                                 (io/file file)
+                                                 (io/resource file)))]
+                                  (.getPath f))]
+                  {:status :done
+                   :form {:id       id
+                          :form     form
+                          :ns       ns
+                          :def-kind def-kind
+                          :line     line
+                          :pprint   (form-pprinter/code-pprint form)
+                          :file     file-path}}))})
 
 (defn timeline-entry [{:keys [flow-id thread-id idx drift]}]
-  {:code `{:status :done
-           :entry (debuggers-api/timeline-entry ~(if (number? flow-id) flow-id nil)
-                                                ~thread-id
-                                                ~idx
-                                                ~(keyword drift))}
-   :post-proc (fn [result]
-                (-> result
-                    (update :entry value-ref->int :fn-args)
-                    (update :entry value-ref->int :result)))})
+  {:code `(debuggers-api/timeline-entry ~(if (number? flow-id) flow-id nil)
+                                        ~thread-id
+                                        ~idx
+                                        ~(keyword drift))
+   :post-proc (fn [entry]
+                {:status :done
+                 :entry (-> entry
+                            (value-ref->int :fn-args)
+                            (value-ref->int :result))})})
 
 (defn frame-data [{:keys [flow-id thread-id fn-call-idx]}]
-  {:code `{:status :done
-           :frame (-> (debuggers-api/frame-data ~(if (number? flow-id) flow-id nil)
-                                                ~thread-id
-                                                ~fn-call-idx
-                                                {}))}
-   :post-proc (fn [result]
-                (-> result
-                    (update :frame value-ref->int :args-vec)
-                    (update :frame value-ref->int :ret)))})
+  {:code `(debuggers-api/frame-data ~(if (number? flow-id) flow-id nil)
+                                    ~thread-id
+                                    ~fn-call-idx
+                                    {})
+   :post-proc (fn [frame]
+                {:status :done
+                 :frame (-> frame
+                            (value-ref->int :args-vec)
+                            (value-ref->int :ret))})})
 
 (defn pprint-val-ref [{:keys [val-ref print-level print-length print-meta pprint]}]
-  {:code `{:status :done
-           :pprint (debuggers-api/val-pprint (make-value-ref ~val-ref)
-                                             {:print-length ~print-length
-                                              :print-level  ~print-level
-                                              :print-meta?  ~(Boolean/parseBoolean print-meta)
-                                              :pprint?      ~(Boolean/parseBoolean pprint)})}
-   :post-proc identity})
+  {:code `(debuggers-api/val-pprint (make-value-ref ~val-ref)
+                                    {:print-length ~print-length
+                                     :print-level  ~print-level
+                                     :print-meta?  ~(Boolean/parseBoolean print-meta)
+                                     :pprint?      ~(Boolean/parseBoolean pprint)})
+   :post-proc (fn [pprint-str]
+                {:status :done
+                 :pprint pprint-str})})
+
+(defn clear-recordings [_]
+  {:code `(debuggers-api/clear-recordings)
+   :post-proc (fn [_]
+                {:status :done})})
 
 (defn cljs-transport
   [{:keys [^Transport transport] :as msg} post-proc]
@@ -141,12 +152,13 @@
   (fn [{:keys [op] :as msg}]
     (let [piggieback? (or cljs-utils/cider-piggieback? cljs-utils/nrepl-piggieback?)]
       (case op
-        "flow-storm-trace-count"        (process-msg next-handler msg trace-count        piggieback?)
-        "flow-storm-find-first-fn-call" (process-msg next-handler msg find-first-fn-call piggieback?)
-        "flow-storm-get-form"           (process-msg next-handler msg get-form           piggieback?)
-        "flow-storm-timeline-entry"     (process-msg next-handler msg timeline-entry     piggieback?)
-        "flow-storm-frame-data"         (process-msg next-handler msg frame-data         piggieback?)
-        "flow-storm-pprint"             (process-msg next-handler msg pprint-val-ref     piggieback?)
+        "flow-storm-trace-count"      (process-msg next-handler msg trace-count      piggieback?)
+        "flow-storm-find-fn-call"     (process-msg next-handler msg find-fn-call     piggieback?)
+        "flow-storm-get-form"         (process-msg next-handler msg get-form         piggieback?)
+        "flow-storm-timeline-entry"   (process-msg next-handler msg timeline-entry   piggieback?)
+        "flow-storm-frame-data"       (process-msg next-handler msg frame-data       piggieback?)
+        "flow-storm-pprint"           (process-msg next-handler msg pprint-val-ref   piggieback?)
+        "flow-storm-clear-recordings" (process-msg next-handler msg clear-recordings piggieback?)
         (next-handler msg)))))
 
 (defn expects-shadow-cljs-middleware
@@ -171,19 +183,21 @@
                 :requires {"flow-id" "The id of the flow"
                            "thread-id" "The id of the thread"}
                 :optional {}
-                :returns {"trace-cnt" "A number with the total traces"}}
+                :returns {"trace-cnt" "A number with the size of the recorded timeline"}}
 
-               "flow-storm-find-first-fn-call"
+               "flow-storm-find-fn-call"
                {:doc "Find the first FnCall for a symbol"
-                :requires {"fq-fn-symb" "The Fully qualified function symbol"}
+                :requires {"fq-fn-symb" "The Fully qualified function symbol"
+                           "from-idx" "The starting timeline idx to search from"
+                           "from-back" "When true, searches for a fn-call starting from the back of the timeline"}
                 :optional {}
-                :returns {"fn-call" "A map with ..."}}
+                :returns {"fn-call" "A map like {:keys [fn-name fn-ns form-id fn-args fn-call-idx idx parent-indx ret-idx]}"}}
 
                "flow-storm-get-form"
                {:doc "Return a registered form"
                 :requires {"form-id" "The id of the form"}
                 :optional {}
-                :returns {"form" "A map with ..."}}
+                :returns {"form" "A map with {:keys [id form ns def-kind line pprint file]}"}}
 
                "flow-storm-timeline-entry"
                {:doc "Return a timeline entry"
@@ -192,7 +206,10 @@
                            "idx" "The current timeline idx"
                            "drift" "The drift, one of next-out next-over prev-over next prev at"}
                 :optional {}
-                :returns {"entry" "A map with ..."}}
+                :returns {"entry" (str "One of : "
+                                       "FnCall   {:keys [type fn-name fn-ns form-id fn-args fn-call-idx idx parent-indx ret-idx]}"
+                                       "Expr     {:keys [type coord result fn-call-idx idx]}"
+                                       "FnReturn {:keys [type coord result fn-call-idx idx]}")}}
 
                "flow-storm-frame-data"
                {:doc "Return a frame for a fn-call index"
@@ -200,7 +217,7 @@
                            "thread-id" "The thread-id for the entry"
                            "fn-call-idx" "The fn-call timeline idx"}
                 :optional {}
-                :returns {"frame" "A map with ..."}}
+                :returns {"frame" "A map with {:keys [fn-ns fn-name args-vec ret form-id fn-call-idx parent-fn-call-idx]}"}}
 
                "flow-storm-pprint"
                {:doc "Return a pretty printing for a value reference id"
@@ -210,6 +227,12 @@
                            "print-meta" "A *print-meta* val for pprint"
                            "pprint" "When true will pretty print, otherwise just print"}
                 :optional {}
-                :returns {"pprint" "A map with :val-str and :val-type"}}}})))
+                :returns {"pprint" "A map with {:keys [val-str val-type]}"}}
+
+               "flow-storm-clear-recordings"
+               {:doc "Clears all flows recordings"
+                :requires {}
+                :optional {}
+                :returns {}}}})))
 
 (set-descriptor! #'wrap-flow-storm descriptor)

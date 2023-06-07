@@ -223,15 +223,18 @@
                                                       {}))))
               sub-timeline))))
 
-  (timeline-find-entry [this from-idx pred]
+  (timeline-find-entry [this from-idx backwards? pred]
     (locking this
-      (let [from (or from-idx 0)
-            to (dec (ml-count timeline))
-            sub-timeline (ml-sub-list timeline from to)]
-        (some (fn [tl-entry]
-                (when (pred tl-entry)
-                  (index-protos/as-immutable tl-entry)))
-              sub-timeline))))
+      (let [last-idx (if backwards?
+                       0
+                       (dec (ml-count timeline)))
+            next-idx (if backwards? dec inc)]
+        (loop [i from-idx]
+          (when (not= i last-idx)
+            (let [tl-entry (ml-get timeline i)]
+              (if (pred tl-entry)
+                (index-protos/as-immutable tl-entry)
+                (recur (next-idx i )))))))))
 
   (timeline-raw-entries [this from-idx to-idx]
     (locking this

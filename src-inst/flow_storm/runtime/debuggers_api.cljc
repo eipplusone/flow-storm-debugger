@@ -118,8 +118,8 @@
         frames (into [] (map reference-frame-data!) fn-frames)]
     frames))
 
-(defn find-first-fn-call [fq-fn-call-symb]
-  (some-> (index-api/find-first-fn-call fq-fn-call-symb)
+(defn find-fn-call [fq-fn-call-symb from-idx opts]
+  (some-> (index-api/find-fn-call fq-fn-call-symb from-idx opts)
           reference-timeline-entry!))
 
 ;; NOTE: this is duplicated for Clojure and ClojureScript so I could get rid of core.async in the runtime part
@@ -211,11 +211,18 @@
 
 (def discard-flow index-api/discard-flow)
 
-(def clear-values-references runtime-values/clear-vals-ref-registry)
+(def all-flows-threads index-api/all-threads)
+
+(defn clear-recordings []
+  (let [flows-ids (->> (all-flows-threads)
+                       (map first)
+                       (into #{}))]
+    (doseq [fid flows-ids]
+      (discard-flow fid))
+    
+    (runtime-values/clear-vals-ref-registry)))
 
 (def flow-threads-info index-api/flow-threads-info)
-
-(def all-flows-threads index-api/all-threads)
 
 (defn goto-location [flow-id {:keys [thread/id thread/name thread/idx]}]
   (rt-events/publish-event! (rt-events/make-goto-location-event flow-id id name idx)))
@@ -396,7 +403,7 @@
              :tap-value tap-value
              :interrupt-task interrupt-task
              :interrupt-all-tasks interrupt-all-tasks
-             :clear-values-references clear-values-references
+             :clear-recordings clear-recordings
              :flow-threads-info flow-threads-info
              :all-flows-threads all-flows-threads
              :stack-for-frame stack-for-frame
