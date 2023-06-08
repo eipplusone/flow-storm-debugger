@@ -106,6 +106,14 @@
    :post-proc (fn [_]
                 {:status :done})})
 
+(defn recorded-functions [_]
+  {:code `(debuggers-api/all-fn-call-stats)
+   :post-proc (fn [stats]
+                {:status :done
+                 :functions (mapv (fn [[fq-fn-name cnt]]
+                                    {:fq-fn-name fq-fn-name :cnt cnt})
+                                  stats)})})
+
 (defn cljs-transport
   [{:keys [^Transport transport] :as msg} post-proc]
   (reify Transport
@@ -164,14 +172,15 @@
   (fn [{:keys [op] :as msg}]
     (let [piggieback? (or cljs-utils/cider-piggieback? cljs-utils/nrepl-piggieback?)]
       (case op
-        "flow-storm-trace-count"      (process-msg next-handler msg trace-count      piggieback?)
-        "flow-storm-find-fn-call"     (process-msg next-handler msg find-fn-call     piggieback?)
-        "flow-storm-get-form"         (process-msg next-handler msg get-form         piggieback?)
-        "flow-storm-timeline-entry"   (process-msg next-handler msg timeline-entry   piggieback?)
-        "flow-storm-frame-data"       (process-msg next-handler msg frame-data       piggieback?)
-        "flow-storm-pprint"           (process-msg next-handler msg pprint-val-ref   piggieback?)
-        "flow-storm-clear-recordings" (process-msg next-handler msg clear-recordings piggieback?)
-        "flow-storm-bindings"         (process-msg next-handler msg bindings piggieback?)
+        "flow-storm-trace-count"        (process-msg next-handler msg trace-count        piggieback?)
+        "flow-storm-find-fn-call"       (process-msg next-handler msg find-fn-call       piggieback?)
+        "flow-storm-get-form"           (process-msg next-handler msg get-form           piggieback?)
+        "flow-storm-timeline-entry"     (process-msg next-handler msg timeline-entry     piggieback?)
+        "flow-storm-frame-data"         (process-msg next-handler msg frame-data         piggieback?)
+        "flow-storm-pprint"             (process-msg next-handler msg pprint-val-ref     piggieback?)
+        "flow-storm-clear-recordings"   (process-msg next-handler msg clear-recordings   piggieback?)
+        "flow-storm-bindings"           (process-msg next-handler msg bindings           piggieback?)
+        "flow-storm-recorded-functions" (process-msg next-handler msg recorded-functions piggieback?)
         (next-handler msg)))))
 
 (defn expects-shadow-cljs-middleware
@@ -249,12 +258,18 @@
                            "idx" "The current timeline index"
                            "all-frame" "When true return all the bindings for the frame, not just the current visible ones"}
                 :optional {}
-                :returns {"bindings" "A map with {bind-symb val-ref-id}"}}
+                :returns {"bindings" "A map with {:keys [bind-symb val-ref-id]}"}}
 
                "flow-storm-clear-recordings"
                {:doc "Clears all flows recordings"
                 :requires {}
                 :optional {}
-                :returns {}}}})))
+                :returns {}}
+
+               "flow-storm-recorded-functions"
+               {:doc "Return all the functions there are recordings for"
+                :requires {}
+                :optional {}
+                :returns {"functions" "A collection of maps like {:keys [fq-fn-name cnt]}"}}}})))
 
 (set-descriptor! #'wrap-flow-storm descriptor)

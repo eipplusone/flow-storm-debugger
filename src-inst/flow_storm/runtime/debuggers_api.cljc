@@ -111,6 +111,16 @@
          (mapv (fn [fstats]
                  (update fstats :dispatch-val reference-value!))))))
 
+(defn all-fn-call-stats []
+  (reduce (fn [r [flow-id thread-id]]
+            (let [thread-stats (index-api/fn-call-stats flow-id thread-id)]
+              (reduce (fn [rr {:keys [fn-ns fn-name cnt]}]
+                        (update rr (str (symbol fn-ns fn-name)) #(+ (or % 0) cnt)))
+                      r
+                      thread-stats)))
+          {}
+          (index-api/all-threads)))
+
 (def find-fn-frames index-api/find-fn-frames)
 
 (defn find-fn-frames-light [flow-id thread-id fn-ns fn-name form-id]
