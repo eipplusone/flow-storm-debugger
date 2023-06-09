@@ -162,6 +162,7 @@ N - Step next over. Go to the next recorded step on the same frame.
 > - Step last. Go to the last recorded step for the function you called cider-storm-debug-current-fn on.
 . - Pprint current value.
 i - Inspect current value using the Cider inspector.
+t - Tap the current value.
 D - Define all recorded bindings for this frame (scope capture like).
 h - Prints this help.
 q - Quit the debugger mode.")
@@ -267,6 +268,16 @@ q - Quit the debugger mode.")
 	  
 	  (message "You are currently positioned in a FnCall which is not inspectable."))))
 
+(defun cider-storm--tap-current-entry ()
+  (let* ((entry-type (cider-storm--entry-type cider-storm-current-entry)))
+	(if (or (eq entry-type 'fn-return)
+			(eq entry-type 'expr))
+
+		(let* ((val-ref (nrepl-dict-get cider-storm-current-entry "result")))
+		  (cider-interactive-eval (format "(tap> (flow-storm.runtime.values/deref-value (flow-storm.types/make-value-ref %d)))" val-ref)))
+	  
+	  (message "You are currently positioned in a FnCall which is not inspectable."))))
+
 (defun cider-storm--debug-fn (fq-fn-name)
   (let* ((fn-call (cider-storm--find-fn-call fq-fn-name 0 nil)))
 	(if fn-call
@@ -340,4 +351,5 @@ q - Quit the debugger mode.")
 	("h" . (lambda () (interactive) (cider-storm--show-help)))
 	("." . (lambda () (interactive) (cider-storm--pprint-current-entry)))    
 	("i" . (lambda () (interactive) (cider-storm--inspect-current-entry)))
+	("t" . (lambda () (interactive) (cider-storm--tap-current-entry)))
 	("D" . (lambda () (interactive) (cider-storm--define-all-bindings-for-frame)))))
