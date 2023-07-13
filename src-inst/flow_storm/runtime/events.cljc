@@ -24,13 +24,15 @@
 (defn make-threads-updated-event [flow-id]
   [:threads-updated {:flow-id flow-id}])
 
-(defn make-var-instrumented-event [var-name var-ns]
-  [:var-instrumented {:var-name var-name
-                      :var-ns var-ns}])
+(defn make-var-instrumented-event [{:keys [var-symb file line]}]
+  [:var-instrumented {:var-symb var-symb
+                      :file file
+                      :line line}])
 
-(defn make-var-uninstrumented-event [var-name var-ns]
-  [:var-uninstrumented {:var-name var-name
-                        :var-ns var-ns}])
+(defn make-var-uninstrumented-event [{:keys [var-symb file line]}]
+  [:var-uninstrumented {:var-symb var-symb
+                        :file file
+                        :line line}])
 
 (defn make-ns-instrumented-event [ns-name]
   [:namespace-instrumented {:ns-name ns-name}])

@@ -29,7 +29,7 @@
     (dbg-state/remove-flow fid)
     (ui-utils/run-later (flows-screen/remove-flow fid)))
 
-  (ui-utils/run-later (browser-screen/clear-instrumentation-list)))
+  (ui-utils/run-later (browser-screen/mark-instrumentation-list-as-invalid)))
 
 (defn websocket-reconnect-loop []
   (utils/log "[WATCHDOG] starting websocket reconnect loop")

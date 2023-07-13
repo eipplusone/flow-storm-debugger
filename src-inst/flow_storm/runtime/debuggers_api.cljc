@@ -335,30 +335,36 @@
      nil))
 
 #?(:clj
-   (defn instrument-var [kind var-symb {:keys [disable-events?] :as config}]
+   (defn instrument-var [kind {:keys [var-ns var-name file line]} {:keys [disable-events?] :as config}]
      (let [inst-fn (case kind
                      :clj  hansel/instrument-var-clj
-                     :cljs hansel/instrument-var-shadow-cljs)]
-       
-       (log (format "Instrumenting var %s %s" var-symb config))
-
-       (inst-fn var-symb (merge (tracer/hansel-config config)
-                                config))
-       
+                     :cljs hansel/instrument-var-shadow-cljs)
+           _ (log (format "Instrumenting var %s/%s %s %d %s" var-ns var-name file line config))
+           inst-vars-info (inst-fn (symbol var-ns var-name)
+                                   (merge (tracer/hansel-config config)
+                                          config
+                                          {:file file
+                                           :line line}))]
+      
        (when-not disable-events?
-         (publish-event! kind (rt-events/make-var-instrumented-event (name var-symb) (namespace var-symb)) config)))))
+         (doseq [iv-info inst-vars-info]
+           (publish-event! kind (rt-events/make-var-instrumented-event iv-info) config))))))
 
 #?(:clj
-   (defn uninstrument-var [kind var-symb {:keys [disable-events?] :as config}]
+   (defn uninstrument-var [kind {:keys [var-ns var-name file line]} {:keys [disable-events?] :as config}]
      (let [inst-fn (case kind
                      :clj  hansel/uninstrument-var-clj
-                     :cljs hansel/uninstrument-var-shadow-cljs)]
-
-       (log (format "Uninstrumenting var %s %s" var-symb config))
-       (inst-fn var-symb (merge (tracer/hansel-config config)
-                                config))
+                     :cljs hansel/uninstrument-var-shadow-cljs)
+           _ (log (format "Uninstrumenting var %s/%s %s %d %s" var-ns var-name file line config))
+           uninst-vars-info (inst-fn (symbol var-ns var-name)
+                                     (merge (tracer/hansel-config config)
+                                            config
+                                            {:file file
+                                             :line line}))]
+             
        (when-not disable-events?
-         (publish-event! kind (rt-events/make-var-uninstrumented-event (name var-symb) (namespace var-symb)) config)))))
+         (doseq [uv-info uninst-vars-info]
+           (publish-event! kind (rt-events/make-var-uninstrumented-event uv-info) config))))))
 
 #?(:clj
    (defn instrument-namespaces [kind ns-prefixes {:keys [disable-events?] :as config}]

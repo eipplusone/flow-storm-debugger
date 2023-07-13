@@ -185,7 +185,10 @@
   ([var-symb] (instrument-var-clj var-symb {}))
   ([var-symb config]
 
-   (dbg-api/instrument-var :clj var-symb config)))
+   (dbg-api/instrument-var :clj
+                           {:var-ns (namespace var-symb)
+                            :var-name (name var-symb)}
+                           config)))
 
 (defn uninstrument-var-clj
 
@@ -195,7 +198,10 @@
 
   [var-symb]
 
-  (dbg-api/uninstrument-var :clj var-symb {}))
+  (dbg-api/uninstrument-var :clj
+                            {:var-ns (namespace var-symb)
+                             :var-name (name var-symb)}
+                            {}))
 
 (defn instrument-namespaces-clj
 
@@ -252,7 +258,7 @@
 
   Arguments are the same as the Clojure version but `config` also accepts a `:build-id`"
 
-  ([prefixes] (instrument-namespaces-clj prefixes {}))
+  ([prefixes] (instrument-namespaces-cljs prefixes {}))
   ([prefixes opts] (dbg-api/instrument-namespaces :cljs prefixes opts)))
 
 (defn uninstrument-namespaces-cljs

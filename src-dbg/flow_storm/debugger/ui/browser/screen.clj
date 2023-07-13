@@ -9,10 +9,12 @@
            [javafx.geometry Orientation Pos]
            [javafx.scene.input MouseButton]))
 
-(defn make-inst-var [var-ns var-name]
+(defn make-inst-var [{:keys [var-symb file line]}]
   {:inst-type :var
-   :var-ns var-ns
-   :var-name var-name})
+   :var-ns (namespace var-symb)
+   :var-name (name var-symb)
+   :file file
+   :line line})
 
 (defn make-inst-ns
   ([ns-name] (make-inst-ns ns-name nil))
@@ -29,6 +31,10 @@
 (defn clear-instrumentation-list []
   (let [[{:keys [clear]}] (obj-lookup "browser-observable-instrumentations-list-data")]
     (clear)))
+
+(def mark-instrumentation-list-as-invalid []
+  (let [[{:keys []}] (obj-lookup "browser-observable-instrumentations-list-data")]
+    (assert "This needs to be implemented")))
 
 (defn add-to-instrumentation-list [inst]
   (let [[{:keys [add-all get-all-items]}] (obj-lookup "browser-observable-instrumentations-list-data")
@@ -50,17 +56,13 @@
 (defn- remove-breakpoint [fq-fn-symb]
   (runtime-api/remove-breakpoint rt-api fq-fn-symb))
 
-(defn- instrument-function
-  ([var-ns var-name] (instrument-function var-ns var-name {}))
-  ([var-ns var-name config]
-   (when (or (= var-ns "clojure.core") (= var-ns "cljs.core"))
-     (show-message "Instrumenting clojure.core is almost never a good idea since the debugger itself uses the namespace and you can easily end in a infinite recursion." :warning))
-   (runtime-api/instrument-var rt-api (str var-ns) (str var-name) config)))
+(defn- instrument-function [{:keys [var-ns] :as var-info} config]
+  (when (or (= var-ns "clojure.core") (= var-ns "cljs.core"))
+    (show-message "Instrumenting clojure.core is almost never a good idea since the debugger itself uses the namespace and you can easily end in a infinite recursion." :warning))
+  (runtime-api/instrument-var rt-api var-info config))
 
-(defn- uninstrument-function
-  ([var-ns var-name] (uninstrument-function var-ns var-name {}))
-  ([var-ns var-name config]
-   (runtime-api/uninstrument-var rt-api (str var-ns) (str var-name) config)))
+(defn- uninstrument-function [var-info config]
+  (runtime-api/uninstrument-var rt-api var-info config))
 
 (defn- instrument-namespaces
   ([namepsaces] (instrument-namespaces namepsaces {}))
@@ -91,8 +93,8 @@
     (add-class browser-instrument-button "enable")
     (add-class browser-instrument-rec-button "enable")
     (add-class browser-break-button "enable")
-    (.setOnAction browser-instrument-button (event-handler [_] (instrument-function ns name)))
-    (.setOnAction browser-instrument-rec-button (event-handler [_] (instrument-function ns name {:deep? true})))
+    (.setOnAction browser-instrument-button (event-handler [_] (instrument-function {:var-ns ns :var-name name} {})))
+    (.setOnAction browser-instrument-rec-button (event-handler [_] (instrument-function {:var-ns ns :var-name name} {:deep? true})))
     (.setOnAction browser-break-button (event-handler [_] (add-breakpoint (symbol (str ns) (str name)))))
 
     (.setText selected-fn-fq-name-label (format "%s" #_ns name))
@@ -123,7 +125,7 @@
 (defn- get-all-vars-for-ns [ns-name]
   (let [all-vars (->> (runtime-api/get-all-vars-for-ns rt-api ns-name)
                       (map (fn [vn]
-                             (make-inst-var ns-name vn))))]
+                             (make-inst-var {:var-ns ns-name :var-name vn}))))]
     (ui-utils/run-later (update-vars-pane all-vars))))
 
 (defn get-all-namespaces []
@@ -232,7 +234,7 @@
                                            (.setSpacing 10))
                                 inst-del-btn (button :label "del"
                                                      :class "browser-instr-del-btn"
-                                                     :on-click (fn [] (uninstrument-function var-ns var-name)))]
+                                                     :on-click (fn [] (uninstrument-function {:var-ns var-ns :var-name var-name} {})))]
                             (doto (h-box [inst-lbl inst-del-btn])
                               (.setSpacing 10)
                               (.setAlignment Pos/CENTER_LEFT)))
@@ -273,7 +275,7 @@
                                              (uninstrument-namespaces del-namespaces)
 
                                              (doseq [v del-vars]
-                                               (uninstrument-function (:var-ns v) (:var-name v)))
+                                               (uninstrument-function v {}))
 
                                              (doseq [b del-brks]
                                                (remove-breakpoint (symbol (:var-ns b) (:var-name b)))))))
@@ -293,8 +295,8 @@
 
                            (doseq [v change-vars]
                              (if (.isSelected en-dis-chk)
-                               (instrument-function (:var-ns v) (:var-name v) {:disable-events? true})
-                               (uninstrument-function (:var-ns v) (:var-name v) {:disable-events? true}))))))
+                               (instrument-function v {:disable-events? true})
+                               (uninstrument-function v {:disable-events? true}))))))
         instrumentations-tools (doto (h-box [(label "Enable all")
                                              en-dis-chk
                                              delete-all-btn]

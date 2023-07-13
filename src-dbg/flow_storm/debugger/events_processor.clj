@@ -15,14 +15,14 @@
             [flow-storm.utils :refer [log]]
             [flow-storm.debugger.ui.state-vars :as ui-vars]))
 
-(defn- var-instrumented-event [{:keys [var-ns var-name]}]
+(defn- var-instrumented-event [inst-var-info]
   (ui-utils/run-later
-   (browser-screen/add-to-instrumentation-list (browser-screen/make-inst-var var-ns var-name))
+   (browser-screen/add-to-instrumentation-list (browser-screen/make-inst-var inst-var-info))
    (ui-main/select-main-tools-tab :browser)))
 
-(defn- var-uninstrumented-event [{:keys [var-ns var-name]}]
+(defn- var-uninstrumented-event [uninst-var-info]
   (ui-utils/run-later
-   (browser-screen/remove-from-instrumentation-list (browser-screen/make-inst-var var-ns var-name))
+   (browser-screen/remove-from-instrumentation-list (browser-screen/make-inst-var uninst-var-info))
    (ui-main/select-main-tools-tab :browser)))
 
 (defn- namespace-instrumented-event [{:keys [ns-name]}]

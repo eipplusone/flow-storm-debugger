@@ -54,8 +54,8 @@
   (get-all-vars-for-ns [_ nsname])
   (get-var-meta [_ var-ns var-name])
 
-  (instrument-var [_ var-ns var-name opts])
-  (uninstrument-var [_ var-ns var-name opts])
+  (instrument-var [_ var-info opts] "Instrument a var function. var-info is a map with {:keys [var-ns var-name file line]}")
+  (uninstrument-var [_ var-info opts] "Uninstrument a var function. var-info is a map with {:keys [var-ns var-name file line]}")
   (instrument-namespaces [_ nsnames opts])
   (uninstrument-namespaces [_ nanames opts])
 
@@ -148,11 +148,11 @@
     (-> (meta (resolve (symbol var-ns var-name)))
         (update :ns (comp str ns-name))))
 
-  (instrument-var [_ var-ns var-name opts]
-    (api-call :local "instrument-var" [:clj (symbol var-ns var-name) opts]))
+  (instrument-var [_ var-info opts]
+    (api-call :local "instrument-var" [:clj var-info opts]))
 
-  (uninstrument-var [_ var-ns var-name opts]
-    (api-call :local "uninstrument-var" [:clj (symbol var-ns var-name) opts]))
+  (uninstrument-var [_ var-info opts]
+    (api-call :local "uninstrument-var" [:clj var-info opts]))
 
   (instrument-namespaces [_ nsnames {:keys [profile] :as opts}]
     (let [disable-set (utils/disable-from-profile profile)]
@@ -275,16 +275,16 @@
       :clj  (api-call :remote "get-var-meta" [:clj (symbol var-ns var-name)])
       :cljs (safe-eval-code-str (format "(flow-storm.runtime.debuggers-api/get-var-meta :cljs '%s/%s %s)" var-ns var-name (select-keys config [:build-id])))))
 
-  (instrument-var [_ var-ns var-name opts]
+  (instrument-var [_ {:keys [var-ns var-name] :as var-info} opts]
     (case env-kind
-      :clj (api-call :remote "instrument-var" [:clj (symbol var-ns var-name) opts])
+      :clj (api-call :remote "instrument-var" [:clj var-info opts])
       :cljs (let [opts (assoc opts :build-id (:build-id config))]
               (show-message "FlowStorm ClojureScript single var instrumentation is pretty limited. You can instrument them only once, and the only way of uninstrumenting them is by reloading your page or restarting your node process. Also deep instrumentation is missing some cases. So for most cases you are going to be better with [un]instrumenting entire namespaces." :warning)
               (safe-eval-code-str (format "(flow-storm.runtime.debuggers-api/instrument-var :cljs '%s/%s %s)" var-ns var-name opts)))))
 
-  (uninstrument-var [_ var-ns var-name opts]
+  (uninstrument-var [_ var-info opts]
     (case env-kind
-      :clj (api-call :remote "uninstrument-var" [:clj (symbol var-ns var-name) opts])
+      :clj (api-call :remote "uninstrument-var" [:clj var-info opts])
       :cljs (let [_opts (assoc opts :build-id (:build-id config))]
               (show-message "FlowStorm currently can't uninstrument single vars in ClojureScript. You can only [un]instrument entire namespaces. If you want to get rid of the current vars instrumentation please reload your browser page, or restart your node process." :warning)
               #_(safe-eval-code-str (format "(flow-storm.runtime.debuggers-api/uninstrument-var :cljs '%s/%s %s)" var-ns var-name opts)))))
