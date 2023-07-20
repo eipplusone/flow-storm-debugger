@@ -3,6 +3,16 @@
 ## master (unreleased)
 	
 ### New Features
+    
+    - Cmd-w closes the value inspector and main window in macOS
+    
+### Changes
+        
+### Bugs fixed 
+
+## 3.6.10 (19-07-2023)
+	
+### New Features
          
 ### Changes
 

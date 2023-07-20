@@ -177,6 +177,17 @@
                   (.setTitle "FlowStorm value inspector")
                   (.setScene scene))]
 
+      (.setOnKeyPressed
+       scene
+       (event-handler
+        [kev]
+        (let [key-name (.getName (.getCode kev))
+              meta? (.isMetaDown kev)]
+          (cond
+
+            (and meta? (= key-name "W"))
+            (.close stage)))))
+
       (ui-vars/register-and-init-stage! stage)
 
       (-> stage .show))

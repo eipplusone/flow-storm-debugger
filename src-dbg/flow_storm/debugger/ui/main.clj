@@ -266,24 +266,24 @@
            ;; since some components creation depend on it
            _ (ui-vars/configure-environment runtime-config)
            scene (Scene. (build-main-pane) 1024 768)
+           shutdown (fn []
+                          ;; call with skip-ui-stop? true since if we are here
+                          ;; we are already stopping the ui from closing the window
+                          (binding [*killing-ui-from-window-close?* true]
+                            (let [stop-config (when (utils/storm-env?)
+                                                {:skip-index-stop? true})]
+                              (if-let [stop-all (resolve 'flow-storm.api/stop)]
+                                ;; if ui and runtime is running under the same jvm
+                                ;; we can stop all
+                                (stop-all stop-config)
+
+                                ;; else stop just the debugger
+                                ((resolve 'flow-storm.debugger.main/stop-debugger))))))
            stage (doto (Stage.)
                    (.setTitle (or (:title config) "Flowstorm debugger"))
                    (.setScene scene)
                    (.setOnCloseRequest
-                    (event-handler
-                     [_]
-                     ;; call with skip-ui-stop? true since if we are here
-                     ;; we are already stopping the ui from closing the window
-                     (binding [*killing-ui-from-window-close?* true]
-                       (let [stop-config (when (utils/storm-env?)
-                                           {:skip-index-stop? true})]
-                         (if-let [stop-all (resolve 'flow-storm.api/stop)]
-                           ;; if ui and runtime is running under the same jvm
-                           ;; we can stop all
-                           (stop-all stop-config)
-
-                           ;; else stop just the debugger
-                           ((resolve 'flow-storm.debugger.main/stop-debugger))))))))
+                    (event-handler [_] (shutdown))))
 
            stages (atom #{stage})
            theme-listener (start-theming-system config stages)]
@@ -293,8 +293,15 @@
                             [kev]
                             (let [key-name (.getName (.getCode kev))
                                   shift? (.isShiftDown kev)
+                                  meta? (.isMetaDown kev)
                                   ctrl? (.isControlDown kev)]
+
                               (cond
+
+                                (and meta? (= key-name "W")) ;; for macOS
+                                (do
+                                  (shutdown)
+                                  (.close stage))
 
                                 (and ctrl? (= key-name "G"))
                                 (runtime-api/interrupt-all-tasks rt-api)
